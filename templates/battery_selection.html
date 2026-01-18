@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Battery Selection - IntelliBMS{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Select a Battery to Monitor</h2>
+</div>
+
+<div class="battery-section">
+    <h3>Predefined Batteries</h3>
+    <div class="battery-grid">
+        <div class="battery-card horizontal-battery-card" onclick="location.href='/battery/1'">
+            <div class="battery-icon">🔋</div>
+            <div class="battery-content">
+                <h4>Tesla Model S Pack</h4>
+                <p>48 cells • 4.1V • SOH: 98.5%</p>
+                <span class="status-badge status-good">Excellent</span>
+            </div>
+        </div>
+        <div class="battery-card horizontal-battery-card" onclick="location.href='/battery/2'">
+            <div class="battery-icon">🔋</div>
+            <div class="battery-content">
+                <h4>BMW i3 Pack</h4>
+                <p>40 cells • 3.9V • SOH: 85.2%</p>
+                <span class="status-badge status-fair">Fair</span>
+            </div>
+        </div>
+        <div class="battery-card horizontal-battery-card" onclick="location.href='/battery/3'">
+            <div class="battery-icon">🔋</div>
+            <div class="battery-content">
+                <h4>Nissan Leaf Pack</h4>
+                <p>44 cells • 4.0V • SOH: 92.8%</p>
+                <span class="status-badge status-good">Good</span>
+            </div>
+        </div>
+        <div class="battery-card horizontal-battery-card" onclick="location.href='/battery/4'">
+            <div class="battery-icon">🔋</div>
+            <div class="battery-content">
+                <h4>Chevy Bolt Pack</h4>
+                <p>36 cells • 3.8V • SOH: 76.3%</p>
+                <span class="status-badge status-critical">Critical</span>
+            </div>
+        </div>
+        <div class="battery-card horizontal-battery-card" onclick="location.href='/battery/5'">
+            <div class="battery-icon">🔋</div>
+            <div class="battery-content">
+                <h4>Audi e-tron Pack</h4>
+                <p>52 cells • 3.95V • SOH: 89.7%</p>
+                <span class="status-badge status-good">Good</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if user_batteries %}
+<div class="battery-section">
+    <h3>Your Custom Batteries</h3>
+    <div class="battery-grid">
+        {% for battery in user_batteries %}
+        <div class="battery-card horizontal-battery-card" onclick="location.href='/battery/{{ battery.id }}'">
+            <div class="battery-icon">🔋</div>
+            <div class="battery-content">
+                <h4>{{ battery.name }}</h4>
+                <p>{{ battery.num_cells }} cells • {{ battery.base_voltage }}V • SOH: {{ battery.base_soh }}%</p>
+                <span class="status-badge">{{ battery.battery_type }}</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

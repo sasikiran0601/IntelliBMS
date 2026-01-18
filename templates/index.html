@@ -1,0 +1,594 @@
+{% extends "base.html" %}
+
+{% block title %}{{ battery_name }} - IntelliBMS{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ==============================
+BASE METRIC CARD STYLES
+============================== */
+    .metric-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .metric-value {
+        font-size: 2.5em;
+        font-weight: bold;
+        margin-bottom: 8px;
+        line-height: 1;
+    }
+
+    .metric-label {
+        color: #666;
+        font-size: 0.95em;
+        font-weight: 500;
+        letter-spacing: 0.2px;
+    }
+
+    /* Metric Card Base */
+    .metric-card {
+        min-height: 140px;
+        display: flex;
+        align-items: center;
+        padding: 24px 20px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        position: relative;
+    }
+
+    /* Icon box */
+    .metric-card::before {
+        width: 70px;
+        height: 70px;
+        flex-shrink: 0;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2.2em;
+        margin-right: 18px;
+    }
+
+    /* Voltage */
+    .metric-card.voltage-card {
+        border-left: 4px solid #007bff;
+    }
+
+    .metric-card.voltage-card::before {
+        content: '⚡';
+        background: linear-gradient(135deg, #007bff, #0056b3);
+        color: white;
+    }
+
+    /* Temperature */
+    .metric-card.temperature-card {
+        border-left: 4px solid #fd7e14;
+    }
+
+    .metric-card.temperature-card::before {
+        content: '🌡️';
+        background: linear-gradient(135deg, #fd7e14, #dc6502);
+        color: white;
+    }
+
+    /* SOH */
+    .metric-card.soh-card {
+        border-left: 4px solid #28a745;
+    }
+
+    .metric-card.soh-card::before {
+        content: '❤️';
+        background: linear-gradient(135deg, #28a745, #1e7e34);
+        color: white;
+    }
+
+    /* ==============================
+AI MODEL PERFORMANCE – KPI CARD
+============================== */
+    .metric-card.ai-model-container {
+        flex-direction: row;
+        align-items: flex-start;
+        padding: 16px 20px;
+        min-height: auto;
+        gap: 18px;
+    }
+
+    /* AI Icon */
+    .metric-card.ai-model-container::before {
+        content: '🤖';
+        width: 60px;
+        height: 60px;
+        flex-shrink: 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2em;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    /* Content wrapper */
+    .ai-model-content {
+        flex: 1;
+    }
+
+    /* Title */
+    .metric-card.ai-model-container .chart-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 12px;
+        color: #2c3e50;
+    }
+
+    /* KPI row */
+    .model-performance {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+    }
+
+    /* Individual KPI */
+    .perf-metric {
+        flex: 1;
+        padding: 8px 12px;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        transition: all 0.2s ease;
+    }
+
+    .perf-metric:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        border-color: #007bff;
+    }
+
+    .perf-value {
+        font-size: 1.4em;
+        font-weight: 700;
+        color: #007bff;
+        line-height: 1.1;
+        margin-bottom: 4px;
+    }
+
+    .perf-label {
+        font-size: 0.75em;
+        color: #6c757d;
+        font-weight: 500;
+        line-height: 1.2;
+    }
+
+    /* ==============================
+CHART CONTAINERS (ONLY FOR GRAPHS)
+============================== */
+    .chart-container {
+        background: white;
+        padding: 16px;
+        border-radius: 12px;
+        margin: 16px 0;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .chart-container>div {
+        position: relative;
+        min-height: 260px;
+    }
+
+    .chart-container canvas {
+        width: 100% !important;
+        height: 100% !important;
+        display: block;
+    }
+
+    /* ==============================
+ALERTS
+============================== */
+    .alert-box {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 15px;
+        margin: 20px 0;
+        border-radius: 4px;
+    }
+
+    .alert-box.critical {
+        background: #f8d7da;
+        border-left-color: #dc3545;
+    }
+
+    /* ==============================
+RESPONSIVE
+============================== */
+    @media (max-width: 768px) {
+
+        .metric-card {
+            flex-direction: column;
+            align-items: flex-start;
+            padding: 20px;
+        }
+
+        .metric-card::before {
+            margin-bottom: 12px;
+            margin-right: 0;
+        }
+
+        .model-performance {
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .perf-metric {
+            width: 100%;
+            padding: 10px 12px;
+        }
+    }
+
+    /* ==============================
+    BATTERY CELLS GRID
+    ============================== */
+    .cells-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+    }
+
+    .cell {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border: 2px solid #dee2e6;
+        border-radius: 12px;
+        padding: 16px;
+        text-align: center;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .cell::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #28a745, #20c997);
+        transition: all 0.3s ease;
+    }
+
+    .cell:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+        border-color: #007bff;
+    }
+
+    .cell strong {
+        display: block;
+        font-size: 0.9em;
+        color: #495057;
+        margin-bottom: 8px;
+        font-weight: 600;
+    }
+
+    .cell div {
+        font-size: 0.95em;
+        color: #6c757d;
+        margin: 4px 0;
+        font-weight: 500;
+    }
+
+    /* Faulty cell styling */
+    .cell.faulty {
+        background: linear-gradient(135deg, #fff5f5 0%, #ffe0e0 100%);
+        border-color: #dc3545;
+        animation: pulse-red 2s ease-in-out infinite;
+    }
+
+    .cell.faulty::before {
+        background: linear-gradient(90deg, #dc3545, #c82333);
+    }
+
+    .cell.faulty strong {
+        color: #dc3545;
+    }
+
+    .cell.faulty div {
+        color: #721c24;
+    }
+
+    @keyframes pulse-red {
+
+        0%,
+        100% {
+            box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+        }
+
+        50% {
+            box-shadow: 0 4px 16px rgba(220, 53, 69, 0.6);
+        }
+    }
+
+    /* Responsive cells grid */
+    @media (max-width: 768px) {
+        .cells-grid {
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 12px;
+        }
+
+        .cell {
+            padding: 12px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>{{ battery_name }}</h2>
+    <a href="{{ url_for('battery_selection') }}" class="btn btn-secondary">← Back to Selection</a>
+</div>
+
+<div id="alert-container"></div>
+
+<div class="monitoring-grid">
+    <!-- First two cards in horizontal layout -->
+    <div class="horizontal-metrics-row">
+        <div class="metric-card voltage-card">
+            <div class="metric-content">
+                <div class="metric-value" id="total-voltage">--</div>
+                <div class="metric-label">Total Voltage (V)</div>
+            </div>
+        </div>
+        <div class="metric-card temperature-card">
+            <div class="metric-content">
+                <div class="metric-value" id="avg-temp">--</div>
+                <div class="metric-label">Avg Temperature (°C)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Third card in full-width vertical layout -->
+    <div class="metric-card soh-card full-width-card">
+        <div class="metric-content">
+            <div class="metric-value" id="soh">--</div>
+            <div class="metric-label">State of Health (%)</div>
+        </div>
+    </div>
+</div>
+
+<!-- AI Model Performance -->
+<div class="metric-card ai-model-container full-width-card">
+    <div class="ai-model-content">
+        <div class="chart-title">AI Model Performance</div>
+        <div class="model-performance">
+            <div class="perf-metric">
+                <div class="perf-value" id="mae-value">--</div>
+                <div class="perf-label">Mean Absolute Error (%)</div>
+            </div>
+            <div class="perf-metric">
+                <div class="perf-value" id="r2-value">--</div>
+                <div class="perf-label">R² Score (Accuracy)</div>
+            </div>
+            <div class="perf-metric">
+                <div class="perf-value" id="forecast-value">--</div>
+                <div class="perf-label">80% SOH Forecast</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SOH History Chart -->
+<div class="chart-container">
+    <div class="chart-title">📈 State of Health History (Last 180 Days)</div>
+    <div style="flex: 1; position: relative; min-height: 400px;">
+        <canvas id="sohHistoryChart"></canvas>
+    </div>
+</div>
+
+<!-- Future Projection Chart -->
+<div class="chart-container">
+    <div class="chart-title">🔮 24-Month SOH Projection</div>
+    <div style="flex: 1; position: relative; min-height: 400px;">
+        <canvas id="projectionChart"></canvas>
+    </div>
+</div>
+
+<!-- Cell Voltage Chart -->
+<div class="chart-container">
+    <div class="chart-title">⚡ Cell Voltage Distribution</div>
+    <div style="flex: 1; position: relative; min-height: 400px;">
+        <canvas id="cellVoltageChart"></canvas>
+    </div>
+</div>
+
+<div style="margin-top: 40px;">
+    <h3 style="margin-bottom: 20px; color: #2c3e50; font-size: 1.5rem; font-weight: 600;">Battery Cells (Detailed View)
+    </h3>
+    <div class="cells-grid" id="cells-container">
+        <!-- Cells will be populated by JavaScript -->
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    const batteryId = {{ battery_id }};
+    const apiUrl = `/api/live-data/${batteryId}`;
+
+    // Chart instances
+    let sohHistoryChart, projectionChart, cellVoltageChart;
+
+    // Initialize charts
+    function initCharts() {
+        const commonOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true, position: 'top' }
+            }
+        };
+
+        // SOH History Chart
+        const historyCtx = document.getElementById('sohHistoryChart').getContext('2d');
+        sohHistoryChart = new Chart(historyCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'State of Health (%)',
+                    data: [],
+                    borderColor: '#007bff',
+                    backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                ...commonOptions,
+                scales: {
+                    y: { beginAtZero: false, min: 75, max: 105 }
+                }
+            }
+        });
+
+        // Projection Chart
+        const projectionCtx = document.getElementById('projectionChart').getContext('2d');
+        projectionChart = new Chart(projectionCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Historical SOH',
+                        data: [],
+                        borderColor: '#007bff',
+                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Projected SOH',
+                        data: [],
+                        borderColor: '#ffc107',
+                        backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                        borderDash: [5, 5],
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                ...commonOptions,
+                scales: {
+                    y: { beginAtZero: false, min: 60, max: 105 }
+                }
+            }
+        });
+
+        // Cell Voltage Chart
+        const cellCtx = document.getElementById('cellVoltageChart').getContext('2d');
+        cellVoltageChart = new Chart(cellCtx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Voltage (V)',
+                    data: [],
+                    backgroundColor: 'rgba(40, 167, 69, 0.6)',
+                    borderColor: '#28a745',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                ...commonOptions,
+                scales: {
+                    y: { beginAtZero: false, min: 3.5, max: 4.3 }
+                }
+            }
+        });
+    }
+
+    function updateBatteryData() {
+        fetch(apiUrl)
+            .then(response => response.json())
+            .then(data => {
+                // Update summary metrics
+                document.getElementById('total-voltage').textContent = data.pack_summary.total_voltage.toFixed(2);
+                document.getElementById('avg-temp').textContent = data.pack_summary.avg_temperature.toFixed(1);
+                document.getElementById('soh').textContent = data.pack_summary.state_of_health.toFixed(1);
+
+                // Update model performance
+                document.getElementById('mae-value').textContent = data.model_performance.mae;
+                document.getElementById('r2-value').textContent = data.model_performance.r2_score;
+                document.getElementById('forecast-value').textContent = data.long_term_forecast.text;
+
+                // Update alert
+                const alertContainer = document.getElementById('alert-container');
+                if (data.pack_summary.alert !== 'None') {
+                    alertContainer.innerHTML = `<div class="alert-box critical">⚠️ ${data.pack_summary.alert}</div>`;
+                } else {
+                    alertContainer.innerHTML = '<div class="alert-box">✓ All systems normal</div>';
+                }
+
+                // Update SOH History Chart
+                const history = data.long_term_forecast.history;
+                const historyLabels = history.map(h => new Date(h.timestamp * 1000).toLocaleDateString());
+                const historyData = history.map(h => h.soh);
+                sohHistoryChart.data.labels = historyLabels;
+                sohHistoryChart.data.datasets[0].data = historyData;
+                sohHistoryChart.update('none');
+
+                // Update Projection Chart
+                const projection = data.long_term_forecast.projection;
+                const lastHistoryPoint = history[history.length - 1];
+
+                // Combine last history point with projection
+                const projectionLabels = [
+                    new Date(lastHistoryPoint.timestamp * 1000).toLocaleDateString(),
+                    ...projection.map(p => new Date(p.x * 1000).toLocaleDateString())
+                ];
+                const historicalForProjection = [lastHistoryPoint.soh, ...Array(projection.length).fill(null)];
+                const projectedData = [lastHistoryPoint.soh, ...projection.map(p => p.y)];
+
+                projectionChart.data.labels = projectionLabels;
+                projectionChart.data.datasets[0].data = historicalForProjection;
+                projectionChart.data.datasets[1].data = projectedData;
+                projectionChart.update('none');
+
+                // Update Cell Voltage Chart
+                const cellLabels = data.cells.map(c => `Cell ${c.id}`);
+                const cellVoltages = data.cells.map(c => c.voltage);
+                const cellColors = data.cells.map(c => c.is_faulty ? 'rgba(220, 53, 69, 0.6)' : 'rgba(40, 167, 69, 0.6)');
+
+                cellVoltageChart.data.labels = cellLabels;
+                cellVoltageChart.data.datasets[0].data = cellVoltages;
+                cellVoltageChart.data.datasets[0].backgroundColor = cellColors;
+                cellVoltageChart.update('none');
+
+                // Update cells grid
+                const cellsContainer = document.getElementById('cells-container');
+                cellsContainer.innerHTML = data.cells.map(cell => `
+                <div class="cell ${cell.is_faulty ? 'faulty' : ''}">
+                    <div><strong>Cell ${cell.id}</strong></div>
+                    <div>${cell.voltage.toFixed(3)}V</div>
+                    <div>${cell.temperature.toFixed(1)}°C</div>
+                </div>
+            `).join('');
+            })
+            .catch(error => console.error('Error fetching battery data:', error));
+    }
+
+    // Initialize charts on page load
+    initCharts();
+
+    // Initial data load
+    updateBatteryData();
+
+    // Auto-refresh every 3 seconds
+    setInterval(updateBatteryData, 3000);
+</script>
+{% endblock %}

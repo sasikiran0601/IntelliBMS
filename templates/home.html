@@ -1,0 +1,496 @@
+{% extends "base.html" %}
+
+{% block title %}IntelliBMS - AI-Powered Battery Management{% endblock %}
+
+{% block extra_css %}
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        background: #000000;
+        overflow: hidden;
+    }
+
+    /* Center navbar brand on homepage */
+    .navbar {
+        display: block !important;
+    }
+
+    .navbar .container {
+        justify-content: center !important;
+    }
+
+    .nav-menu {
+        display: none !important;
+    }
+
+    footer {
+        display: none !important;
+    }
+
+
+    .dotted-surface-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        pointer-events: none;
+        z-index: -1;
+    }
+
+    #dotted-surface-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    /* Tilt Card Container */
+    .card-container {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 10;
+        pointer-events: auto;
+    }
+
+    /* Tilt Card */
+    .tilt-card {
+        width: 700px;
+        display: flex;
+        align-items: center;
+        gap: 30px;
+        background: rgba(20, 20, 30, 0.8);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 30px;
+        transform-style: preserve-3d;
+        transition: transform 0.1s ease-out;
+        cursor: pointer;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    }
+
+    .tilt-card:hover {
+        border-color: rgba(158, 0, 255, 0.3);
+    }
+
+    /* Card Image */
+    .card-image {
+        width: 250px;
+        height: 250px;
+        flex-shrink: 0;
+        border-radius: 12px;
+        object-fit: cover;
+        transform: translateZ(20px);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Card Content Wrapper */
+    .card-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Card Title */
+    .card-title {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #ffffff;
+        margin-bottom: 12px;
+        transform: translateZ(30px);
+        background: linear-gradient(135deg, #ffffff, #a0a0ff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    /* Card Description */
+    .card-description {
+        font-size: 1rem;
+        color: rgba(255, 255, 255, 0.7);
+        line-height: 1.6;
+        margin-bottom: 24px;
+        transform: translateZ(25px);
+    }
+
+    /* Button Container */
+    .button-container {
+        transform: translateZ(35px);
+    }
+
+    /* Get Started Button */
+    .get-started-btn {
+        position: relative;
+        display: inline-block;
+        padding: 12px 32px;
+        background: rgba(59, 130, 246, 0.05);
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        border-radius: 50px;
+        color: #ffffff;
+        font-size: 1rem;
+        font-weight: 500;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        overflow: hidden;
+    }
+
+    .get-started-btn:hover {
+        background: rgba(59, 130, 246, 0.1);
+        border-color: rgba(59, 130, 246, 0.4);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 30px rgba(59, 130, 246, 0.2);
+    }
+
+    .get-started-btn:active {
+        transform: translateY(0);
+    }
+
+    /* Neon effect lines */
+    .btn-neon-top,
+    .btn-neon-bottom {
+        position: absolute;
+        left: 12.5%;
+        width: 75%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 1), transparent);
+        opacity: 0;
+        transition: opacity 0.5s ease;
+    }
+
+    .btn-neon-top {
+        top: 0;
+    }
+
+    .btn-neon-bottom {
+        bottom: 0;
+        opacity: 0.3;
+    }
+
+    .get-started-btn:hover .btn-neon-top {
+        opacity: 1;
+    }
+
+    .get-started-btn:hover .btn-neon-bottom {
+        opacity: 0.3;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+        .tilt-card {
+            width: 90%;
+            max-width: 350px;
+            padding: 24px;
+            flex-direction: column;
+        }
+
+        .card-image {
+            width: 100%;
+            height: 160px;
+        }
+
+        .card-title {
+            font-size: 1.5rem;
+        }
+
+        .card-description {
+            font-size: 0.9rem;
+        }
+
+        .get-started-btn {
+            padding: 10px 28px;
+            font-size: 0.95rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .tilt-card {
+            padding: 20px;
+        }
+
+        .card-image {
+            height: 140px;
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dotted-surface-container">
+    <div id="dotted-surface-canvas"></div>
+</div>
+
+<!-- Interactive Tilt Card -->
+<div class="card-container">
+    <div class="tilt-card" id="tilt-card">
+        <img src="{{ url_for('static', filename='images/battery_heatmap.png') }}" alt="Battery Heatmap"
+            class="card-image">
+        <div class="card-content">
+            <h2 class="card-title">AI-Powered Battery Intelligence</h2>
+            <p class="card-description">
+                Monitor battery health in real-time with advanced thermal imaging and predictive analytics.
+                Detect anomalies before they become critical failures.
+            </p>
+            <div class="button-container">
+                <a href="{{ url_for('login') }}" class="get-started-btn">
+                    <span class="btn-neon-top"></span>
+                    Get Started
+                    <span class="btn-neon-bottom"></span>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+    class DottedSurface {
+        constructor(containerId) {
+            this.container = document.getElementById(containerId);
+            this.scene = null;
+            this.camera = null;
+            this.renderer = null;
+            this.particles = null;
+            this.geometry = null;
+            this.material = null;
+            this.count = 0;
+            this.animationId = null;
+
+            // Configuration
+            this.SEPARATION = 150;
+            this.AMOUNTX = 40;
+            this.AMOUNTY = 60;
+
+            this.init();
+        }
+
+        init() {
+            // Scene setup
+            this.scene = new THREE.Scene();
+            this.scene.fog = new THREE.Fog(0x000000, 2000, 10000);
+
+            // Camera setup
+            this.camera = new THREE.PerspectiveCamera(
+                60,
+                window.innerWidth / window.innerHeight,
+                1,
+                10000
+            );
+            this.camera.position.set(0, 355, 1220);
+
+            // Renderer setup
+            this.renderer = new THREE.WebGLRenderer({
+                alpha: true,
+                antialias: true,
+            });
+            this.renderer.setPixelRatio(window.devicePixelRatio);
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            this.renderer.setClearColor(this.scene.fog.color, 0);
+
+            this.container.appendChild(this.renderer.domElement);
+
+            // Create particles
+            this.createParticles();
+
+            // Handle window resize
+            window.addEventListener('resize', () => this.handleResize());
+
+            // Start animation
+            this.animate();
+        }
+
+        createParticles() {
+            const positions = [];
+            const colors = [];
+
+            // Create geometry for all particles
+            this.geometry = new THREE.BufferGeometry();
+
+            for (let ix = 0; ix < this.AMOUNTX; ix++) {
+                for (let iy = 0; iy < this.AMOUNTY; iy++) {
+                    const x = ix * this.SEPARATION - (this.AMOUNTX * this.SEPARATION) / 2;
+                    const y = 0; // Will be animated
+                    const z = iy * this.SEPARATION - (this.AMOUNTY * this.SEPARATION) / 2;
+
+                    positions.push(x, y, z);
+
+                    // Light gray/white color for dark theme
+                    colors.push(200, 200, 200);
+                }
+            }
+
+            this.geometry.setAttribute(
+                'position',
+                new THREE.Float32BufferAttribute(positions, 3)
+            );
+            this.geometry.setAttribute(
+                'color',
+                new THREE.Float32BufferAttribute(colors, 3)
+            );
+
+            // Create material
+            this.material = new THREE.PointsMaterial({
+                size: 8,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8,
+                sizeAttenuation: true,
+            });
+
+            // Create points object
+            this.particles = new THREE.Points(this.geometry, this.material);
+            this.scene.add(this.particles);
+        }
+
+        animate() {
+            this.animationId = requestAnimationFrame(() => this.animate());
+
+            const positionAttribute = this.geometry.attributes.position;
+            const positions = positionAttribute.array;
+
+            let i = 0;
+            for (let ix = 0; ix < this.AMOUNTX; ix++) {
+                for (let iy = 0; iy < this.AMOUNTY; iy++) {
+                    const index = i * 3;
+
+                    // Animate Y position with sine waves
+                    positions[index + 1] =
+                        Math.sin((ix + this.count) * 0.3) * 50 +
+                        Math.sin((iy + this.count) * 0.5) * 50;
+
+                    i++;
+                }
+            }
+
+            positionAttribute.needsUpdate = true;
+
+            this.renderer.render(this.scene, this.camera);
+            this.count += 0.1;
+        }
+
+        handleResize() {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        cleanup() {
+            if (this.animationId) {
+                cancelAnimationFrame(this.animationId);
+            }
+
+            // Clean up Three.js objects
+            if (this.scene) {
+                this.scene.traverse((object) => {
+                    if (object instanceof THREE.Points) {
+                        if (object.geometry) {
+                            object.geometry.dispose();
+                        }
+                        if (object.material) {
+                            if (Array.isArray(object.material)) {
+                                object.material.forEach((material) => material.dispose());
+                            } else {
+                                object.material.dispose();
+                            }
+                        }
+                    }
+                });
+            }
+
+            if (this.renderer) {
+                this.renderer.dispose();
+                if (this.container && this.renderer.domElement) {
+                    this.container.removeChild(this.renderer.domElement);
+                }
+            }
+        }
+    }
+
+    // Initialize dotted surface
+    const dottedSurface = new DottedSurface('dotted-surface-canvas');
+
+    // Tilt Card Effect
+    class TiltCard {
+        constructor(cardId, rotationFactor = 15) {
+            this.card = document.getElementById(cardId);
+            this.rotationFactor = rotationFactor;
+            this.currentX = 0;
+            this.currentY = 0;
+            this.targetX = 0;
+            this.targetY = 0;
+            this.animationId = null;
+
+            this.init();
+        }
+
+        init() {
+            this.card.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+            this.card.addEventListener('mouseleave', () => this.handleMouseLeave());
+            this.animate();
+        }
+
+        handleMouseMove(e) {
+            const rect = this.card.getBoundingClientRect();
+            const width = rect.width;
+            const height = rect.height;
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Normalize to -0.5 to 0.5
+            this.targetX = (mouseX / width) - 0.5;
+            this.targetY = (mouseY / height) - 0.5;
+        }
+
+        handleMouseLeave() {
+            this.targetX = 0;
+            this.targetY = 0;
+        }
+
+        animate() {
+            // Smooth spring-like animation
+            const springStrength = 0.1;
+
+            this.currentX += (this.targetX - this.currentX) * springStrength;
+            this.currentY += (this.targetY - this.currentY) * springStrength;
+
+            // Calculate rotation angles
+            const rotateY = this.currentX * this.rotationFactor;
+            const rotateX = -this.currentY * this.rotationFactor;
+
+            // Apply transform
+            this.card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+
+            this.animationId = requestAnimationFrame(() => this.animate());
+        }
+
+        cleanup() {
+            if (this.animationId) {
+                cancelAnimationFrame(this.animationId);
+            }
+        }
+    }
+
+    // Initialize tilt card
+    const tiltCard = new TiltCard('tilt-card', 15);
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+        dottedSurface.cleanup();
+        tiltCard.cleanup();
+    });
+</script>
+{% endblock %}
