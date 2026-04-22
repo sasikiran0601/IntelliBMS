@@ -36,13 +36,13 @@ From the ML side, the project can:
 
 ## Datasets Used
 
-This project now uses real battery datasets stored under [Battery_dataset](C:\Users\sasik\OneDrive\Documents\IntelliBMS\Battery_dataset).
+This project now uses real battery datasets stored under [datasets](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets).
 
 ### Primary dataset used for model training
 
 The current training pipeline uses:
 
-- [Battery_dataset/discharge.csv](C:\Users\sasik\OneDrive\Documents\IntelliBMS\Battery_dataset\discharge.csv)
+- [datasets/discharge.csv](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets\discharge.csv)
 
 This file is the main labeled training source. It provides discharge-cycle telemetry including:
 
@@ -59,7 +59,7 @@ From this dataset, the preprocessing script computes:
 - per-cycle SOH summaries
 - SOH as `capacity / initial_capacity * 100`
 
-Current processed summary from [Battery_dataset/processed/preprocessing_summary.json](C:\Users\sasik\OneDrive\Documents\IntelliBMS\Battery_dataset\processed\preprocessing_summary.json):
+Current processed summary from [datasets/processed/preprocessing_summary.json](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets\processed\preprocessing_summary.json):
 
 - `169,766` training rows
 - `4` batteries: `B0005`, `B0006`, `B0007`, `B0018`
@@ -71,8 +71,8 @@ These datasets are included and supported by preprocessing utilities, but they a
 
 1. Battery degradation curve workbooks
 
-- [Battery_dataset/Dataset#3.xlsx](C:\Users\sasik\OneDrive\Documents\IntelliBMS\Battery_dataset\Dataset%233.xlsx)
-- [Battery_dataset/Dataset#5.xlsx](C:\Users\sasik\OneDrive\Documents\IntelliBMS\Battery_dataset\Dataset%235.xlsx)
+- [datasets/Dataset#3.xlsx](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets\Dataset%233.xlsx)
+- [datasets/Dataset#5.xlsx](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets\Dataset%235.xlsx)
 
 These are useful for extracting degradation-curve features such as:
 
@@ -88,7 +88,7 @@ python scripts/preprocess_battery_dataset.py --include-curves
 
 2. Alternative battery telemetry dataset
 
-- [Battery_dataset/battery_alt_dataset](C:\Users\sasik\OneDrive\Documents\IntelliBMS\Battery_dataset\battery_alt_dataset)
+- [datasets/battery_alt_dataset](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets\battery_alt_dataset)
 
 This dataset contains large accelerated-life telemetry files across:
 
@@ -118,14 +118,14 @@ By default, it preprocesses the fast labeled discharge dataset needed for traini
 
 It creates:
 
-- [Battery_dataset/processed/model_training_timeseries.pkl](C:\Users\sasik\OneDrive\Documents\IntelliBMS\Battery_dataset\processed\model_training_timeseries.pkl)
-- [Battery_dataset/processed/discharge_cycle_soh.csv](C:\Users\sasik\OneDrive\Documents\IntelliBMS\Battery_dataset\processed\discharge_cycle_soh.csv)
-- [Battery_dataset/processed/preprocessing_summary.json](C:\Users\sasik\OneDrive\Documents\IntelliBMS\Battery_dataset\processed\preprocessing_summary.json)
+- [datasets/processed/model_training_timeseries.pkl](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets\processed\model_training_timeseries.pkl)
+- [datasets/processed/discharge_cycle_soh.csv](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets\processed\discharge_cycle_soh.csv)
+- [datasets/processed/preprocessing_summary.json](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets\processed\preprocessing_summary.json)
 
 Optional outputs:
 
-- [Battery_dataset/processed/degradation_curve_features.csv](C:\Users\sasik\OneDrive\Documents\IntelliBMS\Battery_dataset\processed\degradation_curve_features.csv)
-- [Battery_dataset/processed/alt_battery_cycle_summary.csv](C:\Users\sasik\OneDrive\Documents\IntelliBMS\Battery_dataset\processed\alt_battery_cycle_summary.csv)
+- [datasets/processed/degradation_curve_features.csv](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets\processed\degradation_curve_features.csv)
+- [datasets/processed/alt_battery_cycle_summary.csv](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets\processed\alt_battery_cycle_summary.csv)
 
 ### Training
 
@@ -236,7 +236,7 @@ IntelliBMS/
 |       |-- model_service.py
 |       |-- simulation_service.py
 |       `-- upload_service.py
-|-- Battery_dataset/
+|-- datasets/
 |   |-- discharge.csv
 |   |-- Dataset#3.xlsx
 |   |-- Dataset#5.xlsx
