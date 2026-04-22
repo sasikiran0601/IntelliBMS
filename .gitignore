@@ -41,9 +41,6 @@ uploads/*
 # Runtime app data
 data/
 
-# Local training datasets and generated processed data
-Battery_dataset/
-
 # Model artifacts
 *.h5
 
