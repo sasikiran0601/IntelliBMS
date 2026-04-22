@@ -1,0 +1,24 @@
+{
+  "sequence_length": 50,
+  "feature_columns": [
+    "voltage",
+    "current",
+    "temperature"
+  ],
+  "feature_scaler_min": [
+    -0.7558894431166501,
+    -36.37500640032448,
+    -1.1350258796577521
+  ],
+  "feature_scaler_scale": [
+    0.4351619883335452,
+    18.419513194843116,
+    0.05073281096651858
+  ],
+  "target_scaler_min": [
+    -2.2625194432256746
+  ],
+  "target_scaler_scale": [
+    0.03262519443225675
+  ]
+}

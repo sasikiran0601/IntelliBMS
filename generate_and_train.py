@@ -1,87 +1,153 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_absolute_error, r2_score
-from tensorflow.keras.models import Sequential
+from sklearn.model_selection import GroupShuffleSplit
+from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.layers import LSTM, Dense
-import os
-import json
+from tensorflow.keras.models import Sequential
+
 
 print("Starting AI model training and validation process...")
 
-# --- 1. Generate Synthetic Battery Data ---
-print("Step 1: Generating synthetic battery data...")
-total_points = 10000
-voltage = np.random.normal(loc=4.1, scale=0.05, size=total_points)
-current = np.random.normal(loc=20, scale=5, size=total_points)
-temperature = np.random.normal(loc=35, scale=3, size=total_points)
-initial_soh = 100
-degradation = np.linspace(0, 15, total_points) + np.random.normal(0, 0.5, total_points)
-soh = np.clip(initial_soh - degradation, 80, 100)
-df = pd.DataFrame({'voltage': voltage, 'current': current, 'temperature': temperature, 'soh': soh})
-print(f"Generated {len(df)} data points.")
+ROOT = Path(__file__).resolve().parent
+TRAINING_DATASET_PICKLE = ROOT / "Battery_dataset" / "processed" / "model_training_timeseries.pkl"
+TRAINING_DATASET_CSV = ROOT / "Battery_dataset" / "processed" / "model_training_timeseries.csv"
+MODEL_PATH = ROOT / "soh_model.h5"
+METRICS_PATH = ROOT / "accuracy_metrics.json"
+METADATA_PATH = ROOT / "model_metadata.json"
 
-# --- 2. Preprocess and Split the Data ---
-print("\nStep 2: Preprocessing and splitting data into training and testing sets...")
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(df)
-sequence_length = 50 
-X, y = [], []
-for i in range(sequence_length, len(scaled_data)):
-    X.append(scaled_data[i-sequence_length:i, :])
-    y.append(scaled_data[i, -1])
-X, y = np.array(X), np.array(y)
-X = X.reshape(X.shape[0], sequence_length, df.shape[1])
+SEQUENCE_LENGTH = 50
+FEATURE_COLUMNS = ["voltage", "current", "temperature"]
+TARGET_COLUMN = "soh"
 
-# Split into 80% for training, 20% for testing to validate the model's real-world performance
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-print(f"Training data shape: {X_train.shape}")
-print(f"Testing data shape: {X_test.shape}")
 
-# --- 3. Build and Train the LSTM Model ---
-print("\nStep 3: Building and training the LSTM model ONLY on the training data...")
-model = Sequential([
-    LSTM(units=50, return_sequences=True, input_shape=(X.shape[1], X.shape[2])),
-    LSTM(units=50),
-    Dense(units=1)
-])
-model.compile(optimizer='adam', loss='mean_squared_error')
-model.fit(X_train, y_train, epochs=5, batch_size=32, verbose=1)
-model_filename = 'soh_model.h5'
-if os.path.exists(model_filename):
-    os.remove(model_filename)
-model.save(model_filename)
-print(f"\nModel training complete! Saved as '{model_filename}'.")
+def load_training_frame() -> pd.DataFrame:
+    if TRAINING_DATASET_PICKLE.exists():
+        frame = pd.read_pickle(TRAINING_DATASET_PICKLE)
+    elif TRAINING_DATASET_CSV.exists():
+        frame = pd.read_csv(TRAINING_DATASET_CSV)
+    else:
+        raise FileNotFoundError(
+            "Real training data not found. Run `python scripts/preprocess_battery_dataset.py` first."
+        )
 
-# --- 4. Evaluate the Model on the Unseen Test Set ---
-print("\nStep 4: Evaluating model performance on the unseen test set...")
-predictions_scaled = model.predict(X_test)
+    sort_columns = [column for column in ["battery_id", "cycle_index", "elapsed_time_s"] if column in frame.columns]
+    frame = frame.sort_values(sort_columns).reset_index(drop=True)
+    required_columns = ["battery_id", *FEATURE_COLUMNS, TARGET_COLUMN]
+    missing_columns = [column for column in required_columns if column not in frame.columns]
+    if missing_columns:
+        raise ValueError(f"Training data is missing required columns: {missing_columns}")
+    return frame
 
-# To calculate a meaningful error, we must "un-scale" the predictions and the actual test values
-# back to their original SoH percentages (e.g., from 0.85 back to 98.5%)
-dummy_array_for_inverse = np.zeros((len(y_test), df.shape[1]))
-dummy_array_for_inverse[:, -1] = y_test.flatten()
-y_test_actual = scaler.inverse_transform(dummy_array_for_inverse)[:, -1]
 
-dummy_array_for_inverse[:, -1] = predictions_scaled.flatten()
-predictions_actual = scaler.inverse_transform(dummy_array_for_inverse)[:, -1]
+def build_sequences(frame: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    sequences: list[np.ndarray] = []
+    targets: list[float] = []
+    groups: list[str] = []
 
-# --- 5. Calculate and Save Accuracy Metrics ---
-print("\nStep 5: Calculating and saving accuracy metrics...")
-mae = mean_absolute_error(y_test_actual, predictions_actual)
-r2 = r2_score(y_test_actual, predictions_actual)
+    for battery_id, battery_frame in frame.groupby("battery_id", sort=False):
+        values = battery_frame[FEATURE_COLUMNS + [TARGET_COLUMN]].to_numpy(dtype=float)
+        if len(values) <= SEQUENCE_LENGTH:
+            continue
+        for index in range(SEQUENCE_LENGTH, len(values)):
+            sequences.append(values[index - SEQUENCE_LENGTH : index, : len(FEATURE_COLUMNS)])
+            targets.append(values[index, -1])
+            groups.append(str(battery_id))
 
-print("\n--- Model Performance Report ---")
-print(f"Mean Absolute Error (MAE): Our model's predictions are, on average, off by only {mae:.4f}% SoH.")
-print(f"R-squared (R²) Score: {r2:.4f} (A score closer to 1.0 means higher accuracy).")
-print("---------------------------------")
+    if not sequences:
+        raise ValueError("Not enough rows to create training sequences.")
 
-metrics = {
-    "mae": f"{mae:.2f}",
-    "r2_score": f"{r2:.3f}"
-}
-metrics_filename = 'accuracy_metrics.json'
-with open(metrics_filename, 'w') as f:
-    json.dump(metrics, f)
-print(f"Accuracy metrics saved to '{metrics_filename}'. You can now run app.py.")
+    return np.array(sequences), np.array(targets, dtype=float), np.array(groups)
+
+
+def main() -> None:
+    print("Step 1: Loading processed real battery data...")
+    frame = load_training_frame()
+    print(f"Loaded {len(frame)} sample-level rows across {frame['battery_id'].nunique()} batteries.")
+
+    print("\nStep 2: Building leakage-free sequences...")
+    X, y, groups = build_sequences(frame)
+    splitter = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=42)
+    train_indices, test_indices = next(splitter.split(X, y, groups=groups))
+
+    X_train_raw, X_test_raw = X[train_indices], X[test_indices]
+    y_train_raw, y_test_raw = y[train_indices], y[test_indices]
+    train_groups, test_groups = groups[train_indices], groups[test_indices]
+
+    held_out_batteries = sorted(set(test_groups.tolist()))
+    train_batteries = sorted(set(train_groups.tolist()))
+
+    feature_scaler = MinMaxScaler()
+    target_scaler = MinMaxScaler()
+
+    X_train_2d = X_train_raw.reshape(-1, len(FEATURE_COLUMNS))
+    X_test_2d = X_test_raw.reshape(-1, len(FEATURE_COLUMNS))
+    X_train = feature_scaler.fit_transform(X_train_2d).reshape(X_train_raw.shape)
+    X_test = feature_scaler.transform(X_test_2d).reshape(X_test_raw.shape)
+    y_train = target_scaler.fit_transform(y_train_raw.reshape(-1, 1)).ravel()
+    y_test = target_scaler.transform(y_test_raw.reshape(-1, 1)).ravel()
+
+    print(f"Training batteries: {train_batteries}")
+    print(f"Held-out test batteries: {held_out_batteries}")
+    print(f"Training data shape: {X_train.shape}")
+    print(f"Testing data shape: {X_test.shape}")
+
+    print("\nStep 3: Building and training the LSTM model on held-out-battery split...")
+    model = Sequential(
+        [
+            LSTM(units=64, return_sequences=True, input_shape=(SEQUENCE_LENGTH, len(FEATURE_COLUMNS))),
+            LSTM(units=32),
+            Dense(units=1),
+        ]
+    )
+    model.compile(optimizer="adam", loss="mean_squared_error")
+    model.fit(X_train, y_train, epochs=5, batch_size=32, verbose=1)
+
+    if MODEL_PATH.exists():
+        os.remove(MODEL_PATH)
+    model.save(MODEL_PATH)
+    print(f"\nModel training complete! Saved as '{MODEL_PATH.name}'.")
+
+    print("\nStep 4: Evaluating model performance on held-out batteries...")
+    predictions_scaled = model.predict(X_test, verbose=0).ravel()
+    y_test_actual = target_scaler.inverse_transform(y_test.reshape(-1, 1)).ravel()
+    predictions_actual = target_scaler.inverse_transform(predictions_scaled.reshape(-1, 1)).ravel()
+
+    print("\nStep 5: Calculating and saving accuracy metrics...")
+    mae = mean_absolute_error(y_test_actual, predictions_actual)
+    r2 = r2_score(y_test_actual, predictions_actual)
+
+    print("\n--- Model Performance Report ---")
+    print(f"Mean Absolute Error (MAE): {mae:.4f}% SoH on held-out batteries.")
+    print(f"R-squared (R²) Score: {r2:.4f} on held-out batteries.")
+    print("---------------------------------")
+
+    metrics = {
+        "mae": f"{mae:.2f}",
+        "r2_score": f"{r2:.3f}",
+        "evaluation": "held_out_battery_split",
+        "train_batteries": train_batteries,
+        "test_batteries": held_out_batteries,
+    }
+    METRICS_PATH.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+
+    metadata = {
+        "sequence_length": SEQUENCE_LENGTH,
+        "feature_columns": FEATURE_COLUMNS,
+        "feature_scaler_min": feature_scaler.min_.tolist(),
+        "feature_scaler_scale": feature_scaler.scale_.tolist(),
+        "target_scaler_min": target_scaler.min_.tolist(),
+        "target_scaler_scale": target_scaler.scale_.tolist(),
+    }
+    METADATA_PATH.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    print(f"Accuracy metrics saved to '{METRICS_PATH.name}'. You can now run app.py.")
+
+
+if __name__ == "__main__":
+    main()

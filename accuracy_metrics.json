@@ -1,1 +1,13 @@
-{"mae": "0.42", "r2_score": "0.985"}
+{
+  "mae": "5.52",
+  "r2_score": "0.678",
+  "evaluation": "held_out_battery_split",
+  "train_batteries": [
+    "B0005",
+    "B0007",
+    "B0018"
+  ],
+  "test_batteries": [
+    "B0006"
+  ]
+}
