@@ -27,7 +27,7 @@ class Battery(Base):
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    # Kept for compatibility with the legacy Flask database.
+    # Kept for compatibility with the legacy database schema.
     user_id = Column(Integer, nullable=False, default=1)
 
     def to_dict(self) -> dict:
