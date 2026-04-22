@@ -38,9 +38,14 @@ Thumbs.db
 uploads/*
 !uploads/.gitkeep
 
-# Model files (optional - uncomment if models are large)
-# *.h5
-# *.pkl
+# Runtime app data
+data/
+
+# Local training datasets and generated processed data
+Battery_dataset/
+
+# Model artifacts
+*.h5
 
 # CSV history files
 soh_history*.csv
