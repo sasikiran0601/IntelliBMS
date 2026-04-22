@@ -16,8 +16,8 @@ from tensorflow.keras.models import Sequential
 print("Starting AI model training and validation process...")
 
 ROOT = Path(__file__).resolve().parent
-TRAINING_DATASET_PICKLE = ROOT / "Battery_dataset" / "processed" / "model_training_timeseries.pkl"
-TRAINING_DATASET_CSV = ROOT / "Battery_dataset" / "processed" / "model_training_timeseries.csv"
+TRAINING_DATASET_PICKLE = ROOT / "datasets" / "processed" / "model_training_timeseries.pkl"
+TRAINING_DATASET_CSV = ROOT / "datasets" / "processed" / "model_training_timeseries.csv"
 MODEL_PATH = ROOT / "soh_model.h5"
 METRICS_PATH = ROOT / "accuracy_metrics.json"
 METADATA_PATH = ROOT / "model_metadata.json"

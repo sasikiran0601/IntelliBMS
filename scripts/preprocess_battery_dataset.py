@@ -10,7 +10,7 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DATASET_ROOT = ROOT / "Battery_dataset"
+DATASET_ROOT = ROOT / "datasets"
 PROCESSED_ROOT = DATASET_ROOT / "processed"
 
 DISCHARGE_FILE = DATASET_ROOT / "discharge.csv"
