@@ -49,3 +49,5 @@ soh_history*.csv
 
 # Logs
 *.log
+#keys
+.pem
