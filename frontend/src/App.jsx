@@ -38,25 +38,6 @@ const DEFAULT_FORM = {
     description: "Custom battery configuration",
 };
 
-function createOrUpdateChart(chartRef, canvasRef, config) {
-    if (!canvasRef.current) {
-        return;
-    }
-
-    if (chartRef.current) {
-        chartRef.current.destroy();
-    }
-
-    chartRef.current = new Chart(canvasRef.current.getContext("2d"), config);
-}
-
-function destroyChart(chartRef) {
-    if (chartRef.current) {
-        chartRef.current.destroy();
-        chartRef.current = null;
-    }
-}
-
 function formatMetric(value, suffix, digits) {
     if (value === null || value === undefined || Number.isNaN(Number(value))) {
         return "--";

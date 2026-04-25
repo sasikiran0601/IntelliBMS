@@ -9,8 +9,9 @@ from app.core.config import settings
 
 
 SEQUENCE_LENGTH = 50
-FEATURE_CENTER = np.array([4.1, 20.0, 35.0, 90.0], dtype=float)
-FEATURE_SCALE = np.array([0.1, 10.0, 10.0, 10.0], dtype=float)
+DEFAULT_FEATURE_COLUMNS = ["voltage", "current", "temperature"]
+FEATURE_CENTER = np.array([4.1, 20.0, 35.0], dtype=float)
+FEATURE_SCALE = np.array([0.1, 10.0, 10.0], dtype=float)
 MODEL_METADATA_PATH = settings.project_root / "model_metadata.json"
 
 
@@ -19,7 +20,7 @@ class ModelService:
         self.model = None
         self.metrics = {"mae": "N/A", "r2_score": "N/A"}
         self.sequence_length = SEQUENCE_LENGTH
-        self.feature_columns = ["voltage", "current", "temperature", "soh"]
+        self.feature_columns = DEFAULT_FEATURE_COLUMNS.copy()
         self.feature_min = None
         self.feature_scale = None
         self.target_min = None
@@ -30,11 +31,12 @@ class ModelService:
         self.model = None
         self.metrics = {"mae": "N/A", "r2_score": "N/A"}
         self.sequence_length = SEQUENCE_LENGTH
-        self.feature_columns = ["voltage", "current", "temperature", "soh"]
+        self.feature_columns = DEFAULT_FEATURE_COLUMNS.copy()
         self.feature_min = None
         self.feature_scale = None
         self.target_min = None
         self.target_scale = None
+        metadata_loaded = False
 
         try:
             if settings.model_path.exists():
@@ -47,18 +49,32 @@ class ModelService:
                 with MODEL_METADATA_PATH.open("r", encoding="utf-8") as handle:
                     metadata = json.load(handle)
                 self.sequence_length = int(metadata.get("sequence_length", SEQUENCE_LENGTH))
-                self.feature_columns = metadata.get("feature_columns", self.feature_columns)
+                self.feature_columns = metadata.get("feature_columns", DEFAULT_FEATURE_COLUMNS.copy())
                 self.feature_min = np.array(metadata.get("feature_scaler_min", []), dtype=float)
                 self.feature_scale = np.array(metadata.get("feature_scaler_scale", []), dtype=float)
                 self.target_min = np.array(metadata.get("target_scaler_min", []), dtype=float)
                 self.target_scale = np.array(metadata.get("target_scaler_scale", []), dtype=float)
+                expected_features = len(self.feature_columns)
+                if (
+                    self.sequence_length <= 0
+                    or expected_features != len(DEFAULT_FEATURE_COLUMNS)
+                    or len(self.feature_min) != expected_features
+                    or len(self.feature_scale) != expected_features
+                    or len(self.target_min) != 1
+                    or len(self.target_scale) != 1
+                ):
+                    raise ValueError("Model metadata is incomplete or incompatible with the current runtime.")
+                metadata_loaded = True
         except Exception:
             self.sequence_length = SEQUENCE_LENGTH
-            self.feature_columns = ["voltage", "current", "temperature", "soh"]
+            self.feature_columns = DEFAULT_FEATURE_COLUMNS.copy()
             self.feature_min = None
             self.feature_scale = None
             self.target_min = None
             self.target_scale = None
+
+        if self.model is not None and not metadata_loaded:
+            self.model = None
 
         try:
             if settings.metrics_path.exists():
