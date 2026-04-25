@@ -17,3 +17,6 @@ uploads
 static
 templates
 data/uploads
+data/history
+datasets
+*.pem
