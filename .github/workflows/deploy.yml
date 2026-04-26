@@ -55,7 +55,12 @@ jobs:
             set -e
             cd /opt/intellibms
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            docker system df || true
+            docker image prune -af || true
+            docker builder prune -af || true
+            docker container prune -f || true
             docker compose pull
             docker compose up -d
             docker compose ps
+            docker system df || true
             docker image prune -f
