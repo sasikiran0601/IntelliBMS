@@ -24,6 +24,8 @@ class Settings:
 def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
     data_dir = project_root / "data"
+    model_path = Path(os.getenv("MODEL_PATH", str(project_root / "soh_model.h5")))
+    metrics_path = Path(os.getenv("METRICS_PATH", str(project_root / "accuracy_metrics.json")))
 
     return Settings(
         project_root=project_root,
@@ -33,8 +35,8 @@ def get_settings() -> Settings:
         upload_dir=data_dir / "uploads",
         db_path=data_dir / "intellibms.db",
         legacy_db_path=project_root / "instance" / "intellibms.db",
-        model_path=project_root / "soh_model.h5",
-        metrics_path=project_root / "accuracy_metrics.json",
+        model_path=model_path,
+        metrics_path=metrics_path,
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "5002")),
         cors_origins=[
