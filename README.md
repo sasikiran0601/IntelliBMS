@@ -415,10 +415,6 @@ The repository also includes a recorded MP4 demo:
 
 - [Local project demo video](./docs/videos/intellibms-demo.mp4)
 
-GitHub README does not support a reliable fully embedded playable video experience across all viewers, so the standard approach for public presentation is still a clickable YouTube thumbnail:
-
-[![Watch the IntelliBMS demo](https://img.youtube.com/vi/YOUR_YOUTUBE_VIDEO_ID/0.jpg)](https://www.youtube.com/watch?v=YOUR_YOUTUBE_VIDEO_ID)
-
 ### Short Visual Preview
 
 If you want an inline animated preview inside the README, add a short GIF here:
