@@ -376,6 +376,42 @@ CloudWatch note:
 - the AWS-side log groups and IAM path are provisioned through Terraform
 - actual log shipping from the EC2 host still depends on CloudWatch agent or logging-driver configuration on the server
 
+## Demo And Observability
+
+This section is intended to showcase the live deployment, CI/CD workflow, and AWS monitoring setup with screenshots and linked demo media.
+
+### GitHub Actions
+
+Live workflow badges:
+
+![Build And Deploy](https://github.com/sasikiran0601/IntelliBMS/actions/workflows/deploy.yml/badge.svg)
+![CI](https://github.com/sasikiran0601/IntelliBMS/actions/workflows/ci.yml/badge.svg)
+
+Pipeline screenshots:
+
+![GitHub Actions Build And Deploy](./docs/images/github-actions-build-deploy.png)
+![GitHub Actions CI](./docs/images/github-actions-ci.png)
+
+### CloudWatch Logs
+
+Application and infrastructure observability screenshots:
+
+![CloudWatch App Logs](./docs/images/cloudwatch-app-logs.png)
+![CloudWatch NGINX Access Logs](./docs/images/cloudwatch-nginx-access-logs.png)
+![CloudWatch NGINX Error Logs](./docs/images/cloudwatch-nginx-error-logs.png)
+
+### Demo Video
+
+GitHub README does not support a fully embedded playable YouTube video, so the standard approach is to use a clickable thumbnail that opens the full demo.
+
+[![Watch the IntelliBMS demo](https://img.youtube.com/vi/YOUR_YOUTUBE_VIDEO_ID/0.jpg)](https://www.youtube.com/watch?v=YOUR_YOUTUBE_VIDEO_ID)
+
+### Short Visual Preview
+
+If you want an inline animated preview inside the README, add a short GIF here:
+
+![IntelliBMS Short Demo](./docs/images/intellibms-demo.gif)
+
 ## API Overview
 
 Main battery routes:
