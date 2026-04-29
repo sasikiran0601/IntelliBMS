@@ -23,7 +23,7 @@ locals {
 
 resource "aws_security_group" "intellibms" {
   name        = local.security_group_name
-  description = "Security group for the IntelliBMS EC2 deployment host."
+  description = var.security_group_description
   vpc_id      = var.vpc_id
 
   ingress {

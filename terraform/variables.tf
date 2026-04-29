@@ -76,6 +76,11 @@ variable "security_group_name" {
   default     = null
 }
 
+variable "security_group_description" {
+  description = "Exact description of the existing security group to avoid replacement during import-first adoption."
+  type        = string
+}
+
 variable "iam_role_name" {
   description = "Optional explicit IAM role name for the EC2 CloudWatch role."
   type        = string
