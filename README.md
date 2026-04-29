@@ -387,7 +387,7 @@ Live workflow badges:
 ![Build And Deploy](https://github.com/sasikiran0601/IntelliBMS/actions/workflows/deploy.yml/badge.svg)
 ![CI](https://github.com/sasikiran0601/IntelliBMS/actions/workflows/ci.yml/badge.svg)
 
-Pipeline screenshots:
+Pipeline screenshots from the current AWS deployment flow:
 
 ![GitHub Actions Build And Deploy](./docs/images/github-actions-build-deploy.png)
 ![GitHub Actions CI](./docs/images/github-actions-ci.png)
@@ -396,13 +396,26 @@ Pipeline screenshots:
 
 Application and infrastructure observability screenshots:
 
+![CloudWatch Log Groups](./docs/images/cloudwatch-log-groups.png)
 ![CloudWatch App Logs](./docs/images/cloudwatch-app-logs.png)
+![CloudWatch Deploy Logs](./docs/images/cloudwatch-deploy-logs.png)
 ![CloudWatch NGINX Access Logs](./docs/images/cloudwatch-nginx-access-logs.png)
 ![CloudWatch NGINX Error Logs](./docs/images/cloudwatch-nginx-error-logs.png)
 
+These screenshots reflect the current centralized logging setup:
+
+- `/intellibms/app` for FastAPI/Uvicorn application logs
+- `/intellibms/deploy` for GitHub Actions deployment output written on the EC2 host
+- `/intellibms/nginx/access` for reverse-proxy request logs
+- `/intellibms/nginx/error` for upstream, TLS, and proxy error visibility
+
 ### Demo Video
 
-GitHub README does not support a fully embedded playable YouTube video, so the standard approach is to use a clickable thumbnail that opens the full demo.
+The repository also includes a recorded MP4 demo:
+
+- [Local project demo video](./docs/videos/intellibms-demo.mp4)
+
+GitHub README does not support a reliable fully embedded playable video experience across all viewers, so the standard approach for public presentation is still a clickable YouTube thumbnail:
 
 [![Watch the IntelliBMS demo](https://img.youtube.com/vi/YOUR_YOUTUBE_VIDEO_ID/0.jpg)](https://www.youtube.com/watch?v=YOUR_YOUTUBE_VIDEO_ID)
 
