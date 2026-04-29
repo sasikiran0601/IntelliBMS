@@ -1,0 +1,27 @@
+aws_region                    = "us-east-1"
+instance_name                 = "intellibms-prod"
+instance_type                 = "t3.small"
+ami_id                        = "ami-xxxxxxxxxxxxxxxxx"
+key_name                      = "your-ec2-keypair-name"
+vpc_id                        = "vpc-xxxxxxxxxxxxxxxxx"
+subnet_id                     = "subnet-xxxxxxxxxxxxxxxxx"
+allowed_ssh_cidr              = ""
+domain_name                   = "intellibms.example.com"
+security_group_description    = "existing-security-group description from AWS"
+root_volume_size_gb           = 30
+root_volume_type              = "gp3"
+cloudwatch_log_retention_days = 30
+
+project_tags = {
+  Owner      = "your-github-or-team-name"
+  CostCenter = "platform"
+}
+
+# Set these only if the current live resource names do not match the
+# defaults derived from instance_name.
+# security_group_name       = "launch-wizard-7"
+# iam_role_name             = "existing-ec2-cloudwatch-role"
+# iam_instance_profile_name = "existing-ec2-instance-profile"
+
+# Optional because variables.tf already defaults this to false.
+# enable_detailed_monitoring = false

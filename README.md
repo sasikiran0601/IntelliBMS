@@ -272,6 +272,48 @@ IntelliBMS/
 `-- README.md
 ```
 
+## Terraform Adoption For The Live AWS Stack
+
+Infrastructure-as-code for the current EC2 deployment now lives under [terraform](C:\Users\sasik\OneDrive\Documents\IntelliBMS\terraform). The Terraform stack is designed for an **import-first** workflow so the existing live EC2 deployment can be adopted without recreating the server.
+
+Terraform is intended to manage:
+
+- the EC2 instance
+- the security group
+- the Elastic IP
+- the IAM role and instance profile for CloudWatch
+- CloudWatch log groups
+
+Terraform is intentionally **not** managing:
+
+- `/opt/intellibms/docker-compose.yml`
+- `/opt/intellibms/.env`
+- `/opt/intellibms/nginx/nginx.conf`
+- `/opt/intellibms/models/soh_model.h5`
+- datasets
+- SQLite contents
+
+Typical adoption flow:
+
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+terraform init
+terraform fmt -check
+terraform validate
+terraform plan
+```
+
+Then import the live AWS resources:
+
+```bash
+terraform import aws_security_group.intellibms sg-xxxxxxxxxxxxxxxxx
+terraform import aws_instance.intellibms i-xxxxxxxxxxxxxxxxx
+terraform import aws_eip.intellibms eipalloc-xxxxxxxxxxxxxxxxx
+```
+
+The Terraform defaults intentionally target a larger root EBS volume (`30 GB`) because the original live EC2 root disk was too small for repeated Docker image pulls during CI/CD deploys.
+
 ## API Overview
 
 Main battery routes:
