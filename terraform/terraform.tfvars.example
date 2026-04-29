@@ -1,0 +1,23 @@
+aws_region                  = "us-east-1"
+instance_name               = "intellibms-prod"
+instance_type               = "t3.small"
+ami_id                      = "ami-xxxxxxxxxxxxxxxxx"
+key_name                    = "intelli-bms-keypair"
+vpc_id                      = "vpc-xxxxxxxxxxxxxxxxx"
+subnet_id                   = "subnet-xxxxxxxxxxxxxxxxx"
+allowed_ssh_cidr            = "203.0.113.10/32"
+domain_name                 = "intellibms.n8nautomations.me"
+root_volume_size_gb         = 30
+root_volume_type            = "gp3"
+cloudwatch_log_retention_days = 30
+
+project_tags = {
+  Owner       = "sasikiran0601"
+  CostCenter  = "portfolio"
+}
+
+# Set these only if the existing live resource names do not match the
+# defaults generated from instance_name.
+# security_group_name       = "intellibms-sg"
+# iam_role_name             = "intellibms-cloudwatch-role"
+# iam_instance_profile_name = "intellibms-instance-profile"
