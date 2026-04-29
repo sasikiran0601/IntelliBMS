@@ -36,7 +36,13 @@ From the ML side, the project can:
 
 ## Datasets Used
 
-This project now uses real battery datasets stored under [datasets](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets).
+This project uses real battery datasets stored locally under [datasets](C:\Users\sasik\OneDrive\Documents\IntelliBMS\datasets) during preprocessing and training.
+
+Important:
+
+- the dataset directory is intentionally kept out of Git history because the files are large
+- another developer should place the same dataset folder locally before running preprocessing or retraining
+- deployment does not depend on the raw datasets at runtime
 
 ### Primary dataset used for model training
 
@@ -65,9 +71,9 @@ Current processed summary from [datasets/processed/preprocessing_summary.json](C
 - `4` batteries: `B0005`, `B0006`, `B0007`, `B0018`
 - SOH range from about `56.69%` to `100%`
 
-### Additional datasets included in the repository
+### Additional local datasets supported by the project
 
-These datasets are included and supported by preprocessing utilities, but they are optional in the current default training flow.
+These datasets are supported by the preprocessing utilities, but they are optional in the current default training flow.
 
 1. Battery degradation curve workbooks
 
@@ -140,11 +146,18 @@ The training workflow:
 - performs a held-out battery split using `GroupShuffleSplit`
 - trains an LSTM model with TensorFlow/Keras
 
-Saved model artifacts:
+Saved training artifacts:
 
 - [soh_model.h5](C:\Users\sasik\OneDrive\Documents\IntelliBMS\soh_model.h5)
 - [accuracy_metrics.json](C:\Users\sasik\OneDrive\Documents\IntelliBMS\accuracy_metrics.json)
 - [model_metadata.json](C:\Users\sasik\OneDrive\Documents\IntelliBMS\model_metadata.json)
+
+Runtime note:
+
+- the production EC2 deployment does not rely on `soh_model.h5` being tracked in Git
+- the live container reads the model from a mounted host path on EC2:
+  - `/opt/intellibms/models/soh_model.h5`
+- the backend supports this through the configurable `MODEL_PATH` environment variable
 
 Current evaluation from [accuracy_metrics.json](C:\Users\sasik\OneDrive\Documents\IntelliBMS\accuracy_metrics.json):
 
@@ -236,18 +249,6 @@ IntelliBMS/
 |       |-- model_service.py
 |       |-- simulation_service.py
 |       `-- upload_service.py
-|-- datasets/
-|   |-- discharge.csv
-|   |-- Dataset#3.xlsx
-|   |-- Dataset#5.xlsx
-|   |-- battery_alt_dataset/
-|   `-- processed/
-|       |-- model_training_timeseries.pkl
-|       |-- model_training_timeseries.csv
-|       |-- discharge_cycle_soh.csv
-|       |-- degradation_curve_features.csv
-|       |-- alt_battery_cycle_summary.csv
-|       `-- preprocessing_summary.json
 |-- data/
 |   |-- history/
 |   |-- uploads/
@@ -261,16 +262,31 @@ IntelliBMS/
 |       `-- styles.css
 |-- scripts/
 |   `-- preprocess_battery_dataset.py
+|-- terraform/
+|   |-- main.tf
+|   |-- outputs.tf
+|   |-- provider.tf
+|   |-- README.md
+|   |-- terraform.tfvars.example
+|   |-- variables.tf
+|   `-- versions.tf
 |-- app.py
 |-- main.py
 |-- generate_and_train.py
-|-- soh_model.h5
 |-- accuracy_metrics.json
 |-- model_metadata.json
 |-- Dockerfile
 |-- requirements.txt
 `-- README.md
 ```
+
+Local-only assets not committed to Git:
+
+- `datasets/`
+- `soh_model.h5`
+- `.env`
+- EC2 PEM keys
+- runtime SQLite data under `data/`
 
 ## Terraform Adoption For The Live AWS Stack
 
@@ -313,6 +329,52 @@ terraform import aws_eip.intellibms eipalloc-xxxxxxxxxxxxxxxxx
 ```
 
 The Terraform defaults intentionally target a larger root EBS volume (`30 GB`) because the original live EC2 root disk was too small for repeated Docker image pulls during CI/CD deploys.
+
+## Deployment Architecture
+
+The live deployment currently runs on a single AWS EC2 instance and keeps application runtime concerns separate from infrastructure state.
+
+### Current production path
+
+- FastAPI application container served with Docker Compose
+- NGINX reverse proxy terminating HTTPS for `intellibms.n8nautomations.me`
+- SQLite persisted on the EC2 host under `/opt/intellibms/data`
+- trained model mounted from `/opt/intellibms/models/soh_model.h5`
+- GitHub Actions building the Docker image and deploying to EC2 over SSH
+- Terraform managing the AWS infrastructure layer
+
+### Runtime files managed on the EC2 host
+
+These are intentionally host-managed and not part of Terraform state:
+
+- `/opt/intellibms/docker-compose.yml`
+- `/opt/intellibms/.env`
+- `/opt/intellibms/nginx/nginx.conf`
+- `/opt/intellibms/models/soh_model.h5`
+- `/opt/intellibms/data`
+
+### Current CI/CD flow
+
+1. Push or merge code into `main`
+2. GitHub Actions runs CI checks
+3. GitHub Actions builds and pushes the Docker image to Docker Hub
+4. GitHub Actions SSHes into the EC2 host
+5. The server pulls the latest image and runs `docker compose up -d`
+
+### Current infrastructure-as-code scope
+
+Terraform currently manages:
+
+- the EC2 instance
+- the security group
+- the Elastic IP
+- the IAM role and instance profile for CloudWatch
+- CloudWatch log groups
+
+CloudWatch note:
+
+- the AWS-side log groups and IAM path are provisioned through Terraform
+- actual log shipping from the EC2 host still depends on CloudWatch agent or logging-driver configuration on the server
 
 ## API Overview
 
@@ -446,6 +508,16 @@ Run with persistent runtime data:
 docker run --rm -p 5002:5002 -v intellibms-data:/app/data your-dockerhub-user/intellibms:latest
 ```
 
+Run with an external model mount similar to production:
+
+```bash
+docker run --rm -p 5002:5002 \
+  -v intellibms-data:/app/data \
+  -v /absolute/path/to/soh_model.h5:/app/models/soh_model.h5:ro \
+  -e MODEL_PATH=/app/models/soh_model.h5 \
+  your-dockerhub-user/intellibms:latest
+```
+
 Push to Docker Hub:
 
 ```bash
@@ -484,12 +556,20 @@ docker push your-dockerhub-user/intellibms:latest
 ### Packaging / Deployment
 
 - Docker
+- Docker Compose
+- AWS EC2
+- NGINX
+- GitHub Actions
+- Terraform
+- CloudWatch
 
 ## Current Limitations
 
 - the default training flow uses the labeled discharge dataset as the main supervised training source
 - the optional Excel and alternative telemetry datasets are preprocessed for extension work, but they are not yet fully fused into the current LSTM training pipeline
 - simulation-backed dashboard behavior is designed for product demonstration and ML integration, not as a replacement for industrial BMS hardware telemetry
+- the live deployment currently depends on a host-mounted model file and host-managed runtime config on EC2
+- CloudWatch infrastructure has been provisioned, but end-to-end server log shipping still needs explicit host-side configuration
 
 ## Summary
 
