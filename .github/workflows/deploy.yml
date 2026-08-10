@@ -59,15 +59,33 @@ jobs:
               echo "===== Deploy started at $(date -u) ====="
               cd /opt/intellibms
               echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
+              # --- Pre-deploy cleanup ---
               docker system df || true
               docker image prune -af || true
               docker builder prune -af || true
               docker container prune -f || true
+
+              # --- Stop running container cleanly before update ---
+              echo "Stopping existing containers..."
+              docker compose stop || true
+
+              # --- Pull latest image ---
+              echo "Pulling latest image..."
               docker compose pull
+
+              # --- Start new container ---
+              echo "Starting new container..."
               docker compose up -d
+
+              # --- Wait for app to be healthy ---
+              echo "Waiting 10s for app health check..."
+              sleep 10
               docker compose ps
-              docker system df || true
+              docker inspect --format='{{.State.Status}}' $(docker compose ps -q) || true
+
+              # --- Final cleanup ---
               docker image prune -f
+              docker system df || true
               echo "===== Deploy finished at $(date -u) ====="
             } >> "$LOG_FILE" 2>&1
-

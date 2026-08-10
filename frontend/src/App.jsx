@@ -33,10 +33,13 @@ const DEFAULT_FORM = {
     capacity_ah: 100,
     max_charge_rate: 50,
     max_discharge_rate: 100,
+    typical_dod_pct: 80,
+    typical_c_rate: 0.5,
     operating_temp_min: -10,
     operating_temp_max: 60,
     description: "Custom battery configuration",
 };
+
 
 function formatMetric(value, suffix, digits) {
     if (value === null || value === undefined || Number.isNaN(Number(value))) {
@@ -178,6 +181,14 @@ function BatteryForm({ form, notice, onChange, onSubmit, submitting }) {
                         <span>Fault Probability</span>
                         <input step="0.1" type="number" value={form.fault_probability} onChange={function (event) { onChange("fault_probability", Number(event.target.value)); }} />
                     </label>
+                    <label>
+                        <span>Typical DoD % (0–100)</span>
+                        <input min="0" max="100" step="1" type="number" value={form.typical_dod_pct} onChange={function (event) { onChange("typical_dod_pct", Number(event.target.value)); }} />
+                    </label>
+                    <label>
+                        <span>Typical C-Rate</span>
+                        <input min="0.1" max="5" step="0.1" type="number" value={form.typical_c_rate} onChange={function (event) { onChange("typical_c_rate", Number(event.target.value)); }} />
+                    </label>
                 </div>
 
                 <label>
@@ -195,32 +206,88 @@ function BatteryForm({ form, notice, onChange, onSubmit, submitting }) {
 
 function UploadPanel({ notice, onUpload, uploading }) {
     const inputRef = useRef(null);
+    const [localError, setLocalError] = useState("");
+
+    async function handleClick() {
+        if (!inputRef.current) return;
+        if (!inputRef.current.files || inputRef.current.files.length === 0) {
+            setLocalError("Please select at least one file before uploading.");
+            return;
+        }
+        setLocalError("");
+        await onUpload(inputRef.current.files);
+        inputRef.current.value = "";
+    }
 
     return (
         <section className="panel form-panel">
             <div className="panel-header">
-                <h2>Import Files</h2>
-                <span>CSV / XLSX / JSON / TXT</span>
+                <h2>Import Battery Files</h2>
+                <span>Accepted: CSV, XLSX, JSON, TXT</span>
             </div>
-            {notice ? <div className="notice inline">{notice}</div> : null}
-            <div className="stack">
-                <input multiple ref={inputRef} type="file" />
-                <button
-                    className="toolbar-button primary"
-                    disabled={uploading}
-                    onClick={async function handleUpload() {
-                        if (!inputRef.current || !inputRef.current.files.length) {
-                            return;
-                        }
 
-                        await onUpload(inputRef.current.files);
-                        inputRef.current.value = "";
-                    }}
-                    type="button"
-                >
-                    {uploading ? "Uploading..." : "Upload and Create"}
-                </button>
+            {/* Error from server */}
+            {notice && (
+                <div style={{
+                    background: notice.toLowerCase().includes("success") ? "#f0fdf4" : "#fff8f1",
+                    border: "1.5px solid " + (notice.toLowerCase().includes("success") ? "#86efac" : "#fdba74"),
+                    borderRadius: 10,
+                    padding: "12px 16px",
+                    fontSize: 14,
+                    color: notice.toLowerCase().includes("success") ? "#166534" : "#9a3412",
+                    marginBottom: 12,
+                    lineHeight: 1.6,
+                }}>
+                    {notice}
+                </div>
+            )}
+
+            {/* Local validation error */}
+            {localError && (
+                <div style={{
+                    background: "#fef2f2", border: "1.5px solid #fca5a5",
+                    borderRadius: 10, padding: "10px 14px", fontSize: 13,
+                    color: "#991b1b", marginBottom: 10,
+                }}>
+                    {localError}
+                </div>
+            )}
+
+            <div style={{
+                border: "2px dashed #cbd5e1",
+                borderRadius: 14,
+                padding: "32px 24px",
+                textAlign: "center",
+                background: "#f8fafc",
+                marginBottom: 16,
+            }}>
+                <div style={{ fontSize: 13, color: "#64748b", marginBottom: 12 }}>
+                    Upload a battery profile file. Any columns not found will use smart defaults.
+                </div>
+                <input
+                    multiple
+                    ref={inputRef}
+                    type="file"
+                    accept=".csv,.xlsx,.xls,.json,.txt"
+                    style={{ fontSize: 13 }}
+                    onChange={function() { setLocalError(""); }}
+                />
             </div>
+
+            <div style={{ background: "#f1f5f9", borderRadius: 10, padding: "12px 14px", fontSize: 12.5, color: "#64748b", marginBottom: 16, lineHeight: 1.7 }}>
+                <strong style={{ color: "#374151" }}>Expected columns (optional — defaults used if missing):</strong><br/>
+                <code>name, battery_type, num_cells, voltage, soh, temperature, degradation_rate, fault_probability, capacity_ah, charge_rate, discharge_rate, temp_min, temp_max, description</code>
+            </div>
+
+            <button
+                className="toolbar-button primary"
+                disabled={uploading}
+                onClick={handleClick}
+                type="button"
+                style={{ width: "100%", padding: "12px", fontSize: 15, fontWeight: 700 }}
+            >
+                {uploading ? "Uploading…" : "Upload and Create Battery"}
+            </button>
         </section>
     );
 }
@@ -1049,6 +1116,723 @@ function MonitoringCharts({ liveData }) {
     );
 }
 
+// ─── RUL Dashboard Component ──────────────────────────────────────────────────
+const DRIVER_META = {
+    "Normal Aging": { sub: "Gradual expected degradation", active: false },
+    "High Temperature Exposure": { sub: "Critical threshold exceeded", active: true },
+    "Deep Discharge Cycles": { sub: "Discharge depth above safe limit", active: true },
+    "Overcharging": { sub: "Voltage limit consistently exceeded", active: true },
+    "Fast Charging Stress": { sub: "High C-rate usage detected", active: true },
+    "Mechanical Stress": { sub: "Vibration or impact anomalies", active: true },
+};
+
+function RulDashboard({ liveData }) {
+    const deferredData = useDeferredValue(liveData);
+
+    const forecast = deferredData && deferredData.long_term_forecast ? deferredData.long_term_forecast : {};
+    const rulHistory = Array.isArray(forecast.rul_history) ? forecast.rul_history : [];
+    const summary = deferredData && deferredData.pack_summary ? deferredData.pack_summary : {};
+    const bands = summary.rul_bands || { best: null, likely: null, worst: null };
+    const drivers = Array.isArray(summary.degradation_drivers) ? summary.degradation_drivers : [];
+    const safetySummaryRaw = summary.safety_summary || "";
+    const [safetySummaryLine, safetySummaryDisclaimer] = safetySummaryRaw.includes("\n\n")
+        ? safetySummaryRaw.split("\n\n")
+        : [safetySummaryRaw, ""];
+
+    const [aiNarrative, setAiNarrative] = useState(null);
+    const [loadingAi, setLoadingAi] = useState(false);
+    const [aiError, setAiError] = useState(null);
+    const [cooldown, setCooldown] = useState(0);
+    const [usageCount, setUsageCount] = useState(0);
+    const [carouselIdx, setCarouselIdx] = useState(0);
+    const [driverIdx, setDriverIdx] = useState(0);
+    const [safetyIdx, setSafetyIdx] = useState(0);
+
+
+    const RATE_LIMIT = 5;      // max calls per hour
+    const COOLDOWN_SECS = 30;  // seconds between calls
+    const STORAGE_KEY = "intellibms_ai_usage";
+
+    // Load usage state from localStorage on mount
+    useEffect(function loadUsage() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                const now = Date.now();
+                // Keep only calls within last hour
+                const recent = (parsed.calls || []).filter(function(ts) { return now - ts < 3600000; });
+                setUsageCount(recent.length);
+                // Restore cooldown if last call was recent
+                if (recent.length > 0) {
+                    const elapsed = Math.floor((now - recent[recent.length - 1]) / 1000);
+                    const remaining = COOLDOWN_SECS - elapsed;
+                    if (remaining > 0) setCooldown(remaining);
+                }
+            }
+        } catch(e) {}
+    }, []);
+
+    // Cooldown countdown ticker
+    useEffect(function tick() {
+        if (cooldown <= 0) return;
+        const id = setTimeout(function() { setCooldown(function(c) { return c - 1; }); }, 1000);
+        return function() { clearTimeout(id); };
+    }, [cooldown]);
+
+    function handleAiAnalysis() {
+        if (loadingAi || cooldown > 0) return;
+        if (!summary || !summary.battery_id || !summary.state_of_health) return;
+
+        // Rate limit check
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            const parsed = raw ? JSON.parse(raw) : { calls: [] };
+            const now = Date.now();
+            const recent = (parsed.calls || []).filter(function(ts) { return now - ts < 3600000; });
+            if (recent.length >= RATE_LIMIT) {
+                setAiError("Rate limit reached: 5 AI analyses per hour. Please try again later.");
+                return;
+            }
+            recent.push(now);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ calls: recent }));
+            setUsageCount(recent.length);
+        } catch(e) {}
+
+        setLoadingAi(true);
+        setAiError(null);
+        setAiNarrative(null);
+        setCarouselIdx(0);
+        setCooldown(COOLDOWN_SECS);
+
+
+        const message = `Battery ${summary.battery_id} has SOH ${summary.state_of_health}%, likely RUL ${bands.likely} cycles. Drivers: ${drivers.join(", ")}.`;
+        fetch("/api/assistant/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Admin-Token": "default-secret-token" },
+            body: JSON.stringify({ message })
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) { setAiNarrative(data.reply || null); })
+        .catch(function(err) { setAiError("Failed to fetch analysis. Please try again."); })
+        .finally(function() { setLoadingAi(false); });
+    }
+
+    const canAnalyse = !loadingAi && cooldown === 0 && usageCount < RATE_LIMIT && !!summary.battery_id;
+    const usageLeft = Math.max(0, RATE_LIMIT - usageCount);
+
+    // Pre-compute carousel slides outside JSX (avoids IIFE-in-JSX Babel issues)
+    const carouselSlides = (function() {
+        if (!aiNarrative) return [];
+        const raw = aiNarrative
+            .replace(/([.!?])\s+/g, '$1||')
+            .split('||')
+            .map(function(s) { return s.trim(); })
+            .filter(function(s) { return s.length > 0; });
+        var out = [];
+        for (var i = 0; i < raw.length; i += 2) {
+            out.push(raw.slice(i, i + 2).join(' '));
+        }
+        return out;
+    }());
+    const carouselTotal = carouselSlides.length;
+    const carouselCurrent = carouselTotal > 0 ? Math.min(carouselIdx, carouselTotal - 1) : 0;
+
+
+    const criticalStatus = safetySummaryLine.includes("Replace");
+    const warningStatus = safetySummaryLine.includes("Monitor");
+    const statusStyle = criticalStatus
+        ? { bg: "#fff7ed", border: "#fed7aa", text: "#c2410c", icon: "⚠️" }
+        : warningStatus
+        ? { bg: "#fffbeb", border: "#fde68a", text: "#b45309", icon: "⚠️" }
+        : { bg: "#f0fdf4", border: "#bbf7d0", text: "#15803d", icon: "✅" };
+
+    const currentRul = rulHistory.length
+        ? rulHistory[rulHistory.length - 1].rul
+        : (bands.likely !== null ? bands.likely : null);
+
+    const allRulVals = [];
+    rulHistory.forEach(function (pt) {
+        if (Number.isFinite(pt.rul)) allRulVals.push(pt.rul);
+        if (Number.isFinite(pt.best)) allRulVals.push(pt.best);
+        if (Number.isFinite(pt.worst)) allRulVals.push(pt.worst);
+    });
+    const rulMin = allRulVals.length ? Math.max(0, Math.min.apply(null, allRulVals) - 15) : 0;
+    const rulMax = allRulVals.length ? Math.max.apply(null, allRulVals) + 15 : 200;
+
+    const rulChartData = rulHistory.map(function (pt, idx) {
+        return { idx: idx + 1, likely: pt.rul, best: pt.best, worst: pt.worst };
+    });
+
+    const DRIVER_META = {
+        "High Temperature Exposure": {
+            icon: "🌡️",
+            sub: "Critical threshold exceeded",
+            active: true,
+        },
+        "Deep Discharge Cycles": {
+            icon: "🔋",
+            sub: "Discharge depth above safe limit",
+            active: true,
+        },
+        "High C-Rate / Current Bursts": {
+            icon: "⚡",
+            sub: "High current stress detected",
+            active: true,
+        },
+        "Increased Internal Resistance": {
+            icon: "🔌",
+            sub: "+12% drift from nominal baseline",
+            active: true,
+        },
+        "Normal Aging": {
+            icon: "📊",
+            sub: "Nominal — No risk detected",
+            active: false,
+        },
+    };
+
+    function RulTooltip({ active, payload }) {
+        if (!active || !payload || !payload.length) return null;
+        const pt = payload[0].payload;
+        return (
+            <div style={{
+                background: "#fff",
+                border: "1px solid #e2e8f0",
+                borderRadius: 10,
+                padding: "10px 16px",
+                boxShadow: "0 4px 20px rgba(0,0,0,0.10)",
+                fontSize: 13,
+            }}>
+                <div style={{ color: "#64748b", marginBottom: 4 }}>Cycle {pt.idx}</div>
+                <div style={{ color: "#3b3fd8", fontWeight: 700 }}>Likely: {pt.likely} cycles</div>
+                {Number.isFinite(pt.best) && <div style={{ color: "#10b981", fontSize: 12 }}>Best: {pt.best}</div>}
+                {Number.isFinite(pt.worst) && <div style={{ color: "#ef4444", fontSize: 12 }}>Worst: {pt.worst}</div>}
+            </div>
+        );
+    }
+
+    if (!ResponsiveContainer || !RechartsLineChart || !RechartsLine || !RechartsXAxis || !RechartsYAxis) {
+        return null;
+    }
+
+    /* ── bar width for safety tiles ── */
+    const safeMax = Math.max(bands.best || 0, bands.likely || 0, bands.worst || 0, 1);
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+            {/* ══════════════════════════════════════════════
+                Card 1 — RUL History  (full width)
+            ══════════════════════════════════════════════ */}
+            <section style={{
+                background: "#fff",
+                borderRadius: 18,
+                border: "1.5px solid #e8edf5",
+                boxShadow: "0 2px 16px rgba(15,23,42,0.06)",
+                padding: "28px 32px 24px",
+            }}>
+                {/* header row */}
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
+                    <div>
+                        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a", letterSpacing: -0.3 }}>RUL History</h2>
+                        <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
+                            Remaining Useful Life (cycles) with best/worst confidence band.
+                        </p>
+                    </div>
+
+                    {/* three metric tiles */}
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        {[
+                            { label: "CURRENT RUL", value: currentRul !== null ? currentRul : "--", color: "#1e3a8a", numColor: "#0f172a" },
+                            { label: "BEST CASE",   value: bands.best  !== null ? bands.best  : "--", color: "#166534", numColor: "#166534" },
+                            { label: "WORST CASE",  value: bands.worst !== null ? bands.worst : "--", color: "#9f1239", numColor: "#be123c" },
+                        ].map(function (tile) {
+                            return (
+                                <div key={tile.label} style={{
+                                    background: "#f8fafc",
+                                    border: "1.5px solid #e2e8f0",
+                                    borderRadius: 14,
+                                    padding: "12px 22px",
+                                    textAlign: "center",
+                                    minWidth: 118,
+                                }}>
+                                    <div style={{ fontSize: 10, fontWeight: 700, color: tile.color, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 4 }}>
+                                        {tile.label}
+                                    </div>
+                                    <div style={{ fontSize: 26, fontWeight: 800, color: tile.numColor, lineHeight: 1 }}>
+                                        {tile.value}
+                                    </div>
+                                    <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>cycles</div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* chart */}
+                {rulChartData.length < 2 ? (
+                    <div style={{
+                        height: 240,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "#f8fafc",
+                        borderRadius: 14,
+                        color: "#94a3b8",
+                        fontSize: 14,
+                        border: "1.5px dashed #e2e8f0",
+                    }}>
+                        Collecting RUL data… Live values will appear shortly.
+                    </div>
+                ) : (
+                    <div style={{ height: 240 }}>
+                        <ResponsiveContainer height="100%" width="100%">
+                            <RechartsLineChart data={rulChartData} margin={{ top: 8, right: 16, left: 0, bottom: 16 }}>
+                                <RechartsCartesianGrid stroke="#f0f4f8" vertical={false} />
+                                <RechartsXAxis
+                                    dataKey="idx"
+                                    tick={{ fontSize: 11, fill: "#94a3b8" }}
+                                    tickLine={false}
+                                    axisLine={false}
+                                />
+                                <RechartsYAxis
+                                    domain={[rulMin, rulMax]}
+                                    tick={{ fontSize: 11, fill: "#94a3b8" }}
+                                    tickLine={false}
+                                    axisLine={false}
+                                    width={42}
+                                />
+                                <RechartsTooltip content={<RulTooltip />} />
+                                <RechartsLine dataKey="best"   stroke="#10b981" strokeWidth={1.5} strokeDasharray="5 4" dot={false} isAnimationActive={false} name="Best Case" />
+                                <RechartsLine dataKey="worst"  stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 4" dot={false} isAnimationActive={false} name="Worst Case" />
+                                <RechartsLine dataKey="likely" stroke="#3b3fd8" strokeWidth={2.5} dot={false} isAnimationActive={false} name="Likely RUL" />
+                            </RechartsLineChart>
+                        </ResponsiveContainer>
+                    </div>
+                )}
+            </section>
+
+            {/* ══════════════════════════════════════════════
+                Bottom row — Drivers (left) + Safety (right)
+            ══════════════════════════════════════════════ */}
+            <div style={{ display: "flex", gap: 20, alignItems: "stretch" }}>
+
+                {/* ── Card 2 — Degradation Drivers Carousel ── */}
+                <section style={{
+                    flex: "1 1 0", minWidth: 0,
+                    background: "#fff",
+                    borderRadius: 18,
+                    border: "1.5px solid #e8edf5",
+                    boxShadow: "0 2px 16px rgba(15,23,42,0.06)",
+                    padding: "26px 28px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 16,
+                }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>Degradation Drivers</h3>
+                        {drivers.length > 1 && (
+                            <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 600 }}>
+                                {Math.min(driverIdx, drivers.length - 1) + 1} / {drivers.length}
+                            </span>
+                        )}
+                    </div>
+
+                    {drivers.length === 0 ? (
+                        <div style={{ color: "#94a3b8", fontSize: 15 }}>No data yet.</div>
+                    ) : (
+                        <div style={{ position: "relative", flex: 1 }}>
+                            <div style={{ overflow: "hidden", borderRadius: 14 }}>
+                                <div style={{
+                                    display: "flex",
+                                    transform: "translateX(-" + (Math.min(driverIdx, drivers.length - 1) * 100) + "%)",
+                                    transition: "transform 0.35s cubic-bezier(0.25,0.46,0.45,0.94)",
+                                }}>
+                                    {drivers.map(function(d) {
+                                        const meta = DRIVER_META[d] || { icon: "", sub: "Detected", active: true };
+                                        const isNormal = d === "Normal Aging";
+                                        return (
+                                            <div key={d} style={{ flex: "0 0 100%", minWidth: 0, padding: "2px" }}>
+                                                <div style={{
+                                                    background: "#fafafa",
+                                                    borderRadius: 14,
+                                                    border: "1.5px solid #e2e8f0",
+                                                    boxShadow: "0 2px 12px rgba(15,23,42,0.06)",
+                                                    padding: "36px 24px",
+                                                    minHeight: 180,
+                                                    display: "flex",
+                                                    flexDirection: "column",
+                                                    alignItems: "center",
+                                                    justifyContent: "center",
+                                                    gap: 14,
+                                                    textAlign: "center",
+                                                }}>
+                                                    {/* Status indicator ring */}
+                                                    <div style={{
+                                                        width: 14, height: 14, borderRadius: "50%",
+                                                        background: isNormal ? "#d1fae5" : "#fde8d0",
+                                                        border: "3px solid " + (isNormal ? "#6ee7b7" : "#fdba74"),
+                                                    }} />
+                                                    <div>
+                                                        <div style={{ fontWeight: 800, fontSize: 17, color: "#0f172a", marginBottom: 6 }}>
+                                                            {d}
+                                                        </div>
+                                                        <div style={{ fontSize: 14, color: "#64748b", lineHeight: 1.55 }}>
+                                                            {meta.sub}
+                                                        </div>
+                                                    </div>
+                                                    <div style={{
+                                                        fontSize: 12, fontWeight: 600, letterSpacing: 0.4,
+                                                        color: "#94a3b8",
+                                                        textTransform: "uppercase",
+                                                    }}>
+                                                        {isNormal ? "Within normal range" : "Requires attention"}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* UIverse prev arrow */}
+                            {drivers.length > 1 && (
+                                <button
+                                    className="car-btn car-btn--prev"
+                                    onClick={function() { setDriverIdx(function(c) { return Math.max(0, c - 1); }); }}
+                                    disabled={driverIdx === 0}
+                                    aria-label="Previous driver"
+                                >
+                                    <span className="car-btn-box">
+                                        <svg className="car-btn-elem" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M10.5 3L5.5 8l5 5" strokeWidth="1.8" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
+                                        <svg className="car-btn-elem" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M10.5 3L5.5 8l5 5" strokeWidth="1.8" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
+                                    </span>
+                                </button>
+                            )}
+
+                            {/* UIverse next arrow */}
+                            {drivers.length > 1 && (
+                                <button
+                                    className="car-btn car-btn--next"
+                                    onClick={function() { setDriverIdx(function(c) { return Math.min(drivers.length - 1, c + 1); }); }}
+                                    disabled={driverIdx >= drivers.length - 1}
+                                    aria-label="Next driver"
+                                >
+                                    <span className="car-btn-box">
+                                        <svg className="car-btn-elem" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M5.5 3L10.5 8l-5 5" strokeWidth="1.8" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
+                                        <svg className="car-btn-elem" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M5.5 3L10.5 8l-5 5" strokeWidth="1.8" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
+                                    </span>
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Dots */}
+                    {drivers.length > 1 && (
+                        <div style={{ display: "flex", justifyContent: "center", gap: 5 }}>
+                            {drivers.map(function(_, i) {
+                                return (
+                                    <button key={i} onClick={function() { setDriverIdx(i); }} style={{
+                                        width: i === driverIdx ? 18 : 7, height: 7,
+                                        borderRadius: 4, border: "none",
+                                        background: i === driverIdx ? "#374151" : "#d1d5db",
+                                        cursor: "pointer", padding: 0,
+                                        transition: "all 0.25s ease",
+                                    }} />
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
+
+                {/* ── Card 3 — Safety Summary Carousel ── */}
+                <section style={{
+                    flex: "1 1 0", minWidth: 0,
+                    background: "#fff",
+                    borderRadius: 18,
+                    border: "1.5px solid #e8edf5",
+                    boxShadow: "0 2px 16px rgba(15,23,42,0.06)",
+                    padding: "26px 28px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 16,
+                }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>Safety Summary</h3>
+                        <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 600 }}>
+                            {["Status", "Forecast", "AI Analysis"][safetyIdx]}
+                        </span>
+                    </div>
+
+                    <div style={{ position: "relative", flex: 1 }}>
+                        <div style={{ overflow: "hidden", borderRadius: 14 }}>
+                            <div style={{
+                                display: "flex",
+                                transform: "translateX(-" + (safetyIdx * 100) + "%)",
+                                transition: "transform 0.35s cubic-bezier(0.25,0.46,0.45,0.94)",
+                            }}>
+
+                                {/* Slide 1 — Status Alert */}
+                                <div style={{ flex: "0 0 100%", minWidth: 0, padding: "2px" }}>
+                                    <div style={{
+                                        background: "#fafafa",
+                                        borderRadius: 14,
+                                        border: "1.5px solid #e2e8f0",
+                                        boxShadow: "0 2px 12px rgba(15,23,42,0.06)",
+                                        padding: "36px 24px",
+                                        minHeight: 180,
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        gap: 14,
+                                        textAlign: "center",
+                                    }}>
+                                        <div style={{
+                                            width: 14, height: 14, borderRadius: "50%",
+                                            background: criticalStatus ? "#fde8d0" : warningStatus ? "#fef9c3" : "#d1fae5",
+                                            border: "3px solid " + (criticalStatus ? "#fdba74" : warningStatus ? "#fde047" : "#6ee7b7"),
+                                        }} />
+                                        {safetySummaryLine ? (
+                                            <span style={{ fontWeight: 700, fontSize: 16, color: "#0f172a", lineHeight: 1.55 }}>
+                                                {safetySummaryLine}
+                                            </span>
+                                        ) : (
+                                            <span style={{ color: "#94a3b8", fontSize: 15 }}>Waiting for simulation data…</span>
+                                        )}
+                                        <div style={{ fontSize: 12, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>
+                                            {criticalStatus ? "Action required" : warningStatus ? "Monitor closely" : "All systems normal"}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Slide 2 — RUL Bands */}
+                                <div style={{ flex: "0 0 100%", minWidth: 0, padding: "2px" }}>
+                                    <div style={{
+                                        background: "#fafafa",
+                                        borderRadius: 14,
+                                        border: "1.5px solid #e2e8f0",
+                                        boxShadow: "0 2px 12px rgba(15,23,42,0.06)",
+                                        padding: "28px 20px",
+                                        minHeight: 180,
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        justifyContent: "center",
+                                        gap: 18,
+                                    }}>
+                                        <div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#64748b", letterSpacing: 0.8, textTransform: "uppercase" }}>
+                                            Remaining Useful Life Forecast
+                                        </div>
+                                        <div style={{ display: "flex", gap: 10 }}>
+                                            {[
+                                                { label: "Optimistic", value: bands.best,   bar: "#94a3b8" },
+                                                { label: "Likely",     value: bands.likely,  bar: "#374151" },
+                                                { label: "Worst Case", value: bands.worst,  bar: "#6b7280" },
+                                            ].map(function(tile) {
+                                                const pct = tile.value !== null ? Math.round((tile.value / safeMax) * 100) : 0;
+                                                return (
+                                                    <div key={tile.label} style={{
+                                                        flex: 1, background: "#fff",
+                                                        border: "1.5px solid #e2e8f0",
+                                                        borderRadius: 12, padding: "14px 8px 12px",
+                                                        textAlign: "center",
+                                                    }}>
+                                                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 8 }}>{tile.label}</div>
+                                                        <div style={{ fontSize: 24, fontWeight: 800, color: "#0f172a", lineHeight: 1 }}>{tile.value !== null ? tile.value : "--"}</div>
+                                                        <div style={{ marginTop: 10, height: 4, borderRadius: 4, background: "#e2e8f0", overflow: "hidden" }}>
+                                                            <div style={{ width: pct + "%", height: "100%", borderRadius: 4, background: tile.bar, transition: "width 0.6s ease" }} />
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Slide 3 — AI Safety Analysis */}
+                                <div style={{ flex: "0 0 100%", minWidth: 0, padding: "2px" }}>
+                                    <div style={{
+                                        background: "#fafafa",
+                                        borderRadius: 14,
+                                        border: "1.5px solid #e2e8f0",
+                                        boxShadow: "0 2px 12px rgba(15,23,42,0.06)",
+                                        padding: "22px 20px",
+                                        minHeight: 180,
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 14,
+                                    }}>
+                                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+                                            <strong style={{ fontSize: 15, color: "#0f172a", fontWeight: 700 }}>
+                                                AI Safety Analysis
+                                            </strong>
+                                            <div style={{
+                                                fontSize: 11, fontWeight: 600,
+                                                color: "#64748b",
+                                                background: "#f1f5f9",
+                                                border: "1px solid #e2e8f0",
+                                                borderRadius: 20, padding: "3px 10px",
+                                            }}>
+                                                {usageLeft}/{RATE_LIMIT} left
+                                            </div>
+                                        </div>
+
+                                        {carouselTotal > 0 && (
+                                            <div style={{ position: "relative" }}>
+                                                <div style={{ overflow: "hidden", borderRadius: 10 }}>
+                                                    <div style={{
+                                                        display: "flex",
+                                                        transform: "translateX(-" + (carouselCurrent * 100) + "%)",
+                                                        transition: "transform 0.35s cubic-bezier(0.25,0.46,0.45,0.94)",
+                                                    }}>
+                                                        {carouselSlides.map(function(slide, i) {
+                                                            return (
+                                                                <div key={i} style={{ flex: "0 0 100%", minWidth: 0 }}>
+                                                                    <div style={{ background: "#f1f5f9", borderRadius: 10, padding: "14px 16px" }}>
+                                                                        <p style={{ margin: 0, fontSize: 13.5, color: "#334155", lineHeight: 1.75 }}>{slide}</p>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                                {carouselTotal > 1 && (
+                                                    <div style={{ display: "flex", justifyContent: "center", gap: 4, marginTop: 8 }}>
+                                                        {carouselSlides.map(function(_, i) {
+                                                            return (
+                                                                <button key={i} onClick={function() { setCarouselIdx(i); }} style={{
+                                                                    width: i === carouselCurrent ? 14 : 5, height: 5,
+                                                                    borderRadius: 3, border: "none",
+                                                                    background: i === carouselCurrent ? "#374151" : "#d1d5db",
+                                                                    cursor: "pointer", padding: 0,
+                                                                    transition: "all 0.25s ease",
+                                                                }} />
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {aiError && (
+                                            <div style={{ fontSize: 13, color: "#374151", background: "#f8fafc", borderRadius: 8, padding: "10px 14px", border: "1px solid #e2e8f0" }}>
+                                                Error: {aiError}
+                                            </div>
+                                        )}
+
+                                        <button
+                                            onClick={handleAiAnalysis}
+                                            disabled={!canAnalyse}
+                                            style={{
+                                                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                                                padding: "11px 18px", borderRadius: 10, border: "none",
+                                                cursor: canAnalyse ? "pointer" : "not-allowed",
+                                                fontSize: 14, fontWeight: 700,
+                                                background: canAnalyse ? "linear-gradient(135deg,#1e293b,#374151)" : "#e2e8f0",
+                                                color: canAnalyse ? "#fff" : "#94a3b8",
+                                                boxShadow: canAnalyse ? "0 4px 14px rgba(15,23,42,0.18)" : "none",
+                                                transition: "all 0.2s ease",
+                                                marginTop: "auto",
+                                                letterSpacing: 0.2,
+                                            }}
+                                            onMouseEnter={function(e) { if (canAnalyse) e.currentTarget.style.transform = "translateY(-1px)"; }}
+                                            onMouseLeave={function(e) { e.currentTarget.style.transform = "translateY(0)"; }}
+                                        >
+                                            {loadingAi ? (
+                                                <><span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", borderRadius: "50%", animation: "intelliSpin 0.7s linear infinite" }}></span>Analysing…</>
+                                            ) : cooldown > 0 ? (
+                                                <>Cooldown {cooldown}s</>
+                                            ) : usageLeft === 0 ? (
+                                                <>Limit Reached</>
+                                            ) : (
+                                                <>Generate AI Analysis</>
+                                            )}
+                                        </button>
+
+                                        {cooldown > 0 && (
+                                            <div>
+                                                <div style={{ height: 3, borderRadius: 3, background: "#e2e8f0", overflow: "hidden" }}>
+                                                    <div style={{
+                                                        height: "100%", borderRadius: 3,
+                                                        background: "#374151",
+                                                        width: (((COOLDOWN_SECS - cooldown) / COOLDOWN_SECS) * 100) + "%",
+                                                        transition: "width 1s linear",
+                                                    }} />
+                                                </div>
+                                                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4, textAlign: "center" }}>Next analysis in {cooldown}s</div>
+                                            </div>
+                                        )}
+                                        <style dangerouslySetInnerHTML={{ __html: "@keyframes fadeInUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }" }} />
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+
+                        {/* Safety Prev — UIverse */}
+                        <button
+                            className="car-btn car-btn--prev"
+                            onClick={function() { setSafetyIdx(function(c) { return Math.max(0, c - 1); }); }}
+                            disabled={safetyIdx === 0}
+                            aria-label="Previous"
+                        >
+                            <span className="car-btn-box">
+                                <svg className="car-btn-elem" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.5 3L5.5 8l5 5" strokeWidth="1.8" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                                <svg className="car-btn-elem" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M10.5 3L5.5 8l5 5" strokeWidth="1.8" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                            </span>
+                        </button>
+
+                        {/* Safety Next — UIverse */}
+                        <button
+                            className="car-btn car-btn--next"
+                            onClick={function() { setSafetyIdx(function(c) { return Math.min(2, c + 1); }); }}
+                            disabled={safetyIdx === 2}
+                            aria-label="Next"
+                        >
+                            <span className="car-btn-box">
+                                <svg className="car-btn-elem" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M5.5 3L10.5 8l-5 5" strokeWidth="1.8" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                                <svg className="car-btn-elem" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M5.5 3L10.5 8l-5 5" strokeWidth="1.8" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                            </span>
+                        </button>
+                    </div>
+
+                    {/* Safety dots */}
+                    <div style={{ display: "flex", justifyContent: "center", gap: 5 }}>
+                        {["Status", "Forecast", "AI Analysis"].map(function(label, i) {
+                            return (
+                                <button key={i} onClick={function() { setSafetyIdx(i); }} style={{
+                                    width: i === safetyIdx ? 18 : 7, height: 7,
+                                    borderRadius: 4, border: "none",
+                                    background: i === safetyIdx ? "#374151" : "#d1d5db",
+                                    cursor: "pointer", padding: 0,
+                                    transition: "all 0.25s ease",
+                                }} />
+                            );
+                        })}
+                    </div>
+                </section>
+
+            </div>
+        </div>
+    );
+}
 function CellGrid({ cells }) {
     const safeCells = Array.isArray(cells) ? cells : [];
 
@@ -1134,10 +1918,12 @@ function DashboardView({ onDelete, selected, liveData, onRefresh }) {
                 <MetricCard tone="blue" label="Total Voltage" value={summary ? formatMetric(summary.total_voltage, "V", 2) : "--"} />
                 <MetricCard tone="amber" label="Average Temperature" value={summary ? formatMetric(summary.avg_temperature, "°C", 1) : "--"} />
                 <MetricCard tone="green" label="State of Health" value={summary ? formatMetric(summary.state_of_health, "%", 1) : "--"} />
+                <MetricCard tone="indigo" label="Remaining Useful Life" value={summary ? formatMetric(summary.remaining_useful_life_cycles, " Cycles", 0) : "--"} />
                 <MetricCard tone="violet" label="Model Accuracy" value={"MAE " + metrics.mae + " / R² " + metrics.r2_score} />
             </div>
 
             <MonitoringCharts liveData={safeLiveData} />
+            <RulDashboard liveData={safeLiveData} />
             <CellGrid cells={safeLiveData.cells} />
         </div>
     );
@@ -1294,11 +2080,14 @@ function IntelliBMSApp() {
 
         try {
             const response = await window.IntelliBMSApi.uploadBatteryFiles(files);
-            setMessage("");
+            const successMsg = response.message || "Battery profile created successfully.";
+            const warnMsg = response.warnings ? " Warning: " + response.warnings : "";
+            setMessage(successMsg + warnMsg);
             await loadCatalog({ id: response.battery_id, source: "custom" });
             changeSection("dashboard");
         } catch (requestError) {
-            setError(requestError.message);
+            // Surface the full server error message (includes rejected file names)
+            setError(requestError.message || "Upload failed. Please check the file format and try again.");
         } finally {
             setUploading(false);
         }

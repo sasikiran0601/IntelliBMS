@@ -676,3 +676,85 @@ textarea:focus {
         padding: 22px 18px 20px;
     }
 }
+
+/* ═══════════════════════════════════════════
+   Carousel arrow buttons  (UIverse xopc333)
+═══════════════════════════════════════════ */
+.car-btn {
+    display: block;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    overflow: hidden;
+    outline: none;
+    background-color: transparent;
+    cursor: pointer;
+    border: 0;
+    z-index: 10;
+    padding: 0;
+}
+.car-btn:disabled {
+    opacity: 0.28;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+.car-btn:before,
+.car-btn:after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    inset: 5px;
+}
+.car-btn:before {
+    border: 3px solid #d1d5db;
+    transition: opacity 0.4s cubic-bezier(0.77, 0, 0.175, 1) 80ms,
+                transform 0.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) 80ms;
+}
+.car-btn:after {
+    border: 3px solid #6366f1;
+    transform: scale(1.3);
+    transition: opacity 0.4s cubic-bezier(0.165, 0.84, 0.44, 1),
+                transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    opacity: 0;
+}
+.car-btn:hover:before,
+.car-btn:focus:before {
+    opacity: 0;
+    transform: scale(0.7);
+    transition: opacity 0.4s cubic-bezier(0.165, 0.84, 0.44, 1),
+                transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.car-btn:hover:after,
+.car-btn:focus:after {
+    opacity: 1;
+    transform: scale(1);
+    transition: opacity 0.4s cubic-bezier(0.77, 0, 0.175, 1) 80ms,
+                transform 0.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) 80ms;
+}
+.car-btn-box {
+    display: flex;
+    position: absolute;
+    top: 0;
+    left: 0;
+    transition: transform 0.4s;
+}
+.car-btn-elem {
+    display: block;
+    width: 16px;
+    height: 16px;
+    margin: 14px 14px 0 14px;
+    fill: #374151;
+}
+.car-btn:hover .car-btn-box,
+.car-btn:focus .car-btn-box {
+    transform: translateX(-44px);
+}
+.car-btn--prev {
+    left: -22px;
+}
+.car-btn--next {
+    right: -22px;
+}

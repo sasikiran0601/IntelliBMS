@@ -67,10 +67,16 @@ def parse_battery_file(file_path: Path, filename: str) -> dict:
         if frame.empty:
             return _default_battery_data(filename)
 
+        def _safe_int(val, default):
+            try:
+                return int(float(val))
+            except (TypeError, ValueError):
+                return default
+
         return {
-            "name": _first_value(frame, "name", "battery_name", default="Auto Battery"),
-            "battery_type": _first_value(frame, "type", "battery_type", default="Li-ion"),
-            "num_cells": int(_first_value(frame, "cells", "num_cells", default=48)),
+            "name": str(_first_value(frame, "name", "battery_name", default=f"Auto Battery - {filename}")),
+            "battery_type": str(_first_value(frame, "type", "battery_type", default="Li-ion")),
+            "num_cells": _safe_int(_first_value(frame, "cells", "num_cells", default=48), 48),
             "base_voltage": float(_first_value(frame, "voltage", "base_voltage", default=4.1)),
             "base_soh": float(_first_value(frame, "soh", "base_soh", default=95.0)),
             "base_temp": float(_first_value(frame, "temperature", "base_temp", default=25.0)),
@@ -81,11 +87,11 @@ def parse_battery_file(file_path: Path, filename: str) -> dict:
             "max_discharge_rate": float(_first_value(frame, "discharge_rate", "max_discharge_rate", default=100.0)),
             "operating_temp_min": float(_first_value(frame, "temp_min", "operating_temp_min", default=-10.0)),
             "operating_temp_max": float(_first_value(frame, "temp_max", "operating_temp_max", default=60.0)),
-            "description": _first_value(
+            "description": str(_first_value(
                 frame,
-                "description",
-                default="Auto-generated from uploaded file",
-            ),
+                "description", "desc", "notes",
+                default=f"Auto-generated from uploaded file: {filename}",
+            )),
         }
     except Exception:
         return _default_battery_data(filename)

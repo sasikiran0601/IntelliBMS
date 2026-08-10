@@ -114,6 +114,12 @@ class BatteryStateManager:
     def __init__(self) -> None:
         self._states: dict[str, dict[str, Any]] = {}
         self._lock = Lock()
+        
+        cycle_features_path = settings.project_root / "All_Datasets" / "Converted_CSV_Datasets" / "engineered_features" / "cycle_level_features.csv"
+        if cycle_features_path.exists():
+            self._cycle_features_df = pd.read_csv(cycle_features_path)
+        else:
+            self._cycle_features_df = None
 
     def list_predefined(self) -> list[dict[str, Any]]:
         items = []
@@ -182,11 +188,122 @@ class BatteryStateManager:
             state["pack_soh"] = float(max(0.0, min(100.0, state["pack_soh"])))
             self._record_history_point(state)
 
+            # --- RUL Prediction & Dataset Integration ---
+            history_frame = state.get("history_df", pd.DataFrame())
+            cycle_idx = len(history_frame)
+            
+            # Extract realistic features if available
+            real_features = {}
+            if self._cycle_features_df is not None and not self._cycle_features_df.empty:
+                # Map presets to dataset batteries for realistic simulation
+                battery_map = {1: "B0005", 2: "B0006", 3: "B0007", 4: "B0018", 5: "B0025"}
+                dataset_b_id = battery_map.get(public_id, "B0005")
+                battery_data = self._cycle_features_df[self._cycle_features_df["battery_id"] == dataset_b_id]
+                
+                if not battery_data.empty:
+                    row_idx = min(cycle_idx, len(battery_data) - 1)
+                    cycle_row = battery_data.iloc[row_idx]
+                    real_features = {
+                        "max_temp_discharge_C": float(cycle_row.get("max_temp_discharge_C", avg_temp)),
+                        "mean_temp_discharge_C": float(cycle_row.get("mean_temp_discharge_C", avg_temp)),
+                        "max_temp_charge_C": float(cycle_row.get("max_temp_charge_C", avg_temp)),
+                        "ambient_temperature_C": float(cycle_row.get("ambient_temperature_C", config["base_temp"])),
+                        "mean_current_discharge_A": float(cycle_row.get("mean_current_discharge_A", config.get("max_discharge_rate", 50) * 0.6)),
+                        "c_rate": float(cycle_row.get("c_rate", 0.5)),
+                        "mean_current_charge_A": float(cycle_row.get("mean_current_charge_A", config.get("max_charge_rate", 50) * 0.4)),
+                        "dod_pct": float(cycle_row.get("dod_pct", 80.0)),
+                        "discharge_time_s": float(cycle_row.get("discharge_time_s", 3600)),
+                        "charge_time_s": float(cycle_row.get("charge_time_s", 7200)),
+                        "min_voltage_V": float(cycle_row.get("min_voltage_V", 3.0 * config["num_cells"])),
+                        "ir_drop_proxy_V": float(cycle_row.get("ir_drop_proxy_V", 0.15)),
+                        "Re_ohm": float(cycle_row.get("Re_ohm", 0.015)),
+                        "Rct_ohm": float(cycle_row.get("Rct_ohm", 0.045)),
+                        "R_total_ohm": float(cycle_row.get("R_total_ohm", 0.060)),
+                        "Rct_slope_10cyc": 0.0001,
+                    }
+            
+            soh_slope_5cyc = 0.0
+            soh_slope_10cyc = 0.0
+            if len(history_frame) >= 5:
+                soh_slope_5cyc = (history_frame["soh"].iloc[-1] - history_frame["soh"].iloc[-5]) / 5.0
+            if len(history_frame) >= 10:
+                soh_slope_10cyc = (history_frame["soh"].iloc[-1] - history_frame["soh"].iloc[-10]) / 10.0
+                
+            rul_features_dict = {
+                "soh_pct": state["pack_soh"],
+                "cycle_number": cycle_idx,
+                "soh_slope_5cyc": soh_slope_5cyc,
+                "soh_slope_10cyc": soh_slope_10cyc,
+                "soh_cumulative_drop": config["base_soh"] - state["pack_soh"],
+                "max_temp_discharge_C": real_features.get("max_temp_discharge_C", avg_temp + random.uniform(2, 5)),
+                "mean_temp_discharge_C": real_features.get("mean_temp_discharge_C", avg_temp),
+                "max_temp_charge_C": real_features.get("max_temp_charge_C", avg_temp + random.uniform(1, 3)),
+                "ambient_temperature_C": real_features.get("ambient_temperature_C", config["base_temp"]),
+                "mean_current_discharge_A": real_features.get("mean_current_discharge_A", float(config.get("max_discharge_rate", 50)) * 0.6),
+                "c_rate": real_features.get("c_rate", float(config.get("typical_c_rate", 0.5))),
+                "mean_current_charge_A": real_features.get("mean_current_charge_A", float(config.get("max_charge_rate", 50)) * 0.4),
+                "dod_pct": real_features.get("dod_pct", float(config.get("typical_dod_pct", 80.0))),
+                "discharge_time_s": real_features.get("discharge_time_s", 3600),
+                "charge_time_s": real_features.get("charge_time_s", 7200),
+                "min_voltage_V": real_features.get("min_voltage_V", 3.0 * config["num_cells"]),
+                "ir_drop_proxy_V": real_features.get("ir_drop_proxy_V", 0.15),
+                "Re_ohm": real_features.get("Re_ohm", 0.015),
+                "Rct_ohm": real_features.get("Rct_ohm", 0.045),
+                "R_total_ohm": real_features.get("R_total_ohm", 0.060),
+                "Rct_slope_10cyc": real_features.get("Rct_slope_10cyc", 0.0001),
+            }
+            predicted_rul = model_service.predict_rul(rul_features_dict)
+            
+            # Compute RUL Bands
+            best_rul = None
+            likely_rul = None
+            worst_rul = None
+            if predicted_rul is not None:
+                likely_rul = int(round(predicted_rul))
+                best_rul = int(round(predicted_rul * 1.15))
+                worst_rul = int(round(predicted_rul * 0.85))
+                
+            # Identify Degradation Drivers
+            drivers = []
+            if rul_features_dict["max_temp_discharge_C"] > 35:
+                drivers.append("High Temperature Exposure")
+            if rul_features_dict["dod_pct"] > 85:
+                drivers.append("Deep Discharge Cycles")
+            if rul_features_dict["c_rate"] > 1.0 or rul_features_dict["mean_current_discharge_A"] > 40:
+                drivers.append("High C-Rate / Current Bursts")
+            if rul_features_dict["Re_ohm"] > 0.05:
+                drivers.append("Increased Internal Resistance")
+            if not drivers:
+                drivers.append("Normal Aging")
+                
+            # Generate Safety-Aware Summary
+            safety_summary = "Operating Normally: No immediate safety concerns."
+            if state["pack_soh"] < 80 or (likely_rul is not None and likely_rul < 30):
+                safety_summary = "Replace Soon: Battery has reached critical degradation levels."
+            elif state["pack_soh"] < 90 or len([d for d in drivers if d != "Normal Aging"]) >= 2:
+                safety_summary = "Monitor Closely: Significant degradation factors identified."
+                
+            safety_summary += "\n\nDisclaimer: This is a predictive estimate based on historical patterns and should not be used as the sole operational guideline. Always consult manufacturer guidelines."
+
+            # Enhance long term forecast with RUL
+            forecast_data = self._forecast(state)
+            if "rul_history" not in state:
+                state["rul_history"] = []
+            if likely_rul is not None:
+                state["rul_history"].append({"timestamp": int(time.time()), "rul": likely_rul, "best": best_rul, "worst": worst_rul})
+            # Keep only last 60 points for rul history matching SOH window roughly
+            state["rul_history"] = state["rul_history"][-60:]
+            forecast_data["rul_history"] = state["rul_history"]
+
             return {
                 "pack_summary": {
                     "total_voltage": float(round(sum(c["voltage"] for c in state["battery_cells"]), 2)),
                     "avg_temperature": float(round(avg_temp, 2)),
                     "state_of_health": float(round(state["pack_soh"], 2)),
+                    "remaining_useful_life_cycles": likely_rul if likely_rul is not None else "N/A",
+                    "rul_bands": {"best": best_rul, "likely": likely_rul, "worst": worst_rul},
+                    "degradation_drivers": drivers,
+                    "safety_summary": safety_summary,
                     "alert": (
                         f"Critical Fault: Cell #{state['faulty_cell_index']} is malfunctioning!"
                         if state["fault_introduced"]
@@ -196,7 +313,7 @@ class BatteryStateManager:
                     "battery_id": public_id,
                 },
                 "cells": state["battery_cells"],
-                "long_term_forecast": self._forecast(state),
+                "long_term_forecast": forecast_data,
                 "model_performance": model_service.metrics,
             }
 
@@ -381,6 +498,8 @@ class BatteryStateManager:
         payload.setdefault("max_discharge_rate", 100.0)
         payload.setdefault("operating_temp_min", -10.0)
         payload.setdefault("operating_temp_max", 60.0)
+        payload.setdefault("typical_dod_pct", 80.0)
+        payload.setdefault("typical_c_rate", 0.5)
         return payload
 
 

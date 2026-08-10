@@ -3,18 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IntelliBMS</title>
+    <title>IntelliBMS — Predictive Battery Management</title>
+    <meta name="description" content="IntelliBMS: AI-powered lithium battery State of Health and Remaining Useful Life estimation dashboard.">
     <link rel="stylesheet" href="/app/src/styles.css">
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root">
+        <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-family:system-ui,-apple-system,sans-serif;">
+            <div style="text-align:center;">
+                <div style="width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#3b82f6;border-radius:50%;animation:intelliSpin 0.8s linear infinite;margin:0 auto 16px;"></div>
+                <style>@keyframes intelliSpin{to{transform:rotate(360deg);}}</style>
+                <div style="font-weight:700;font-size:16px;color:#0f172a;">IntelliBMS</div>
+                <div style="font-size:12px;color:#64748b;margin-top:4px;">Initializing predictive battery management...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- UMD React (must load before Babel compiles JSX) -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
     <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Pinned Babel Standalone 7.23.10 — stable classic runtime -->
+    <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         PERMANENT FIX: Babel error overlay + compile-time interceptor
+         Catches JSX SyntaxErrors and shows a readable overlay instead
+         of a blank screen, pointing to exact file + line + column.
+         ════════════════════════════════════════════════════════════════ -->
+    <script>
+        // Step 1 — Register classic-runtime preset (prevents pragma conflicts)
+        Babel.registerPreset('intellibms', {
+            presets: [
+                [Babel.availablePresets['react'], {
+                    runtime: 'classic',
+                    pragma: 'React.createElement',
+                    pragmaFrag: 'React.Fragment'
+                }]
+            ]
+        });
+
+        // Step 2 — Error overlay renderer
+        function __showBabelError(title, detail, hint) {
+            var old = document.getElementById('__ib_err__');
+            if (old) old.remove();
+            function esc(s) {
+                return String(s)
+                    .replace(/&/g,'&amp;')
+                    .replace(/</g,'&lt;')
+                    .replace(/>/g,'&gt;');
+            }
+            var box = document.createElement('div');
+            box.id = '__ib_err__';
+            box.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(10,15,30,0.93);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px;font-family:ui-monospace,SFMono-Regular,monospace;';
+            box.innerHTML =
+                '<div style="background:#1e293b;border:2px solid #ef4444;border-radius:16px;max-width:740px;width:100%;padding:28px 30px;box-shadow:0 32px 80px rgba(0,0,0,0.6);">' +
+                  '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">' +
+                    '<span style="font-size:20px">🔴</span>' +
+                    '<span style="font-size:15px;font-weight:800;color:#f87171;">' + esc(title) + '</span>' +
+                    '<button onclick="document.getElementById(\'__ib_err__\').remove()" style="margin-left:auto;background:#334155;border:none;color:#94a3b8;border-radius:8px;padding:4px 12px;cursor:pointer;font-size:12px;font-family:inherit;">✕ Dismiss</button>' +
+                  '</div>' +
+                  '<pre style="background:#0f172a;border-radius:10px;padding:16px;overflow-x:auto;font-size:12.5px;line-height:1.75;color:#fca5a5;white-space:pre-wrap;word-break:break-word;margin:0 0 14px;">' + esc(detail) + '</pre>' +
+                  (hint ? '<div style="font-size:12px;color:#94a3b8;line-height:1.65;border-top:1px solid #334155;padding-top:14px;">💡 ' + esc(hint) + '</div>' : '') +
+                  '<div style="font-size:11px;color:#475569;margin-top:12px;">Fix App.jsx then hard-refresh: Ctrl+Shift+R (Win) / Cmd+Shift+R (Mac)</div>' +
+                '</div>';
+            document.body.appendChild(box);
+        }
+
+        // Step 3 — Intercept Babel.transform (compile-time errors)
+        (function() {
+            var _orig = Babel.transform.bind(Babel);
+            Babel.transform = function(code, opts) {
+                try {
+                    return _orig(code, opts);
+                } catch (err) {
+                    var loc = err.loc ? ' — line ' + err.loc.line + ', col ' + (err.loc.column + 1) : '';
+                    __showBabelError(
+                        'JSX Compile Error' + loc + ' in ' + (opts && opts.filename ? opts.filename.split('/').pop() : 'App.jsx'),
+                        err.message || String(err),
+                        'Common causes: extra </div> after a closing brace }, unclosed JSX element, mismatched parentheses or brackets. Look at the line number above.'
+                    );
+                    throw err;
+                }
+            };
+        })();
+
+        // Step 4 — Catch any runtime SyntaxErrors too
+        window.addEventListener('error', function(ev) {
+            var msg = String(ev.message || '');
+            if (ev.error instanceof SyntaxError || msg.toLowerCase().indexOf('syntaxerror') !== -1 || msg.toLowerCase().indexOf('unexpected token') !== -1) {
+                __showBabelError(
+                    'JSX Syntax Error',
+                    (ev.error && ev.error.stack) ? ev.error.stack : msg,
+                    'Open App.jsx and look for mismatched tags or stray brackets near the reported line.'
+                );
+                ev.preventDefault();
+            }
+        }, true);
+    </script>
+
+    <!-- App code -->
     <script src="/app/src/api.js"></script>
-    <script type="text/babel" data-presets="react" src="/app/src/App.jsx"></script>
-    <script type="text/babel" data-presets="react" src="/app/src/main.jsx"></script>
+    <script type="text/babel" data-presets="intellibms" src="/app/src/App.jsx"></script>
+    <script type="text/babel" data-presets="intellibms" src="/app/src/main.jsx"></script>
 </body>
 </html>
