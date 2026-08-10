@@ -284,7 +284,10 @@ class BatteryStateManager:
                 drivers.append("High Temperature Exposure")
             if rul_features_dict["dod_pct"] > 85:
                 drivers.append("Deep Discharge Cycles")
-            if rul_features_dict["c_rate"] > 1.0 or rul_features_dict["mean_current_discharge_A"] > 40:
+            # FIX: Use only c_rate (dimensionless, comparable across all battery sizes).
+            # mean_current_discharge_A > 40 was unreliable: fallback = max_discharge * 0.6 = 60A
+            # for Tesla 100Ah pack, which triggered "High C-Rate" even at normal 0.6C operation.
+            if rul_features_dict["c_rate"] > 1.0:
                 drivers.append("High C-Rate / Current Bursts")
             if rul_features_dict["Re_ohm"] > 0.05:
                 drivers.append("Increased Internal Resistance")
