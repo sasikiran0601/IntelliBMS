@@ -170,13 +170,22 @@ class BatteryStateManager:
             avg_voltage = sum(cell["voltage"] for cell in state["battery_cells"]) / config["num_cells"]
             avg_temp = sum(cell["temperature"] for cell in state["battery_cells"]) / config["num_cells"]
 
+            # FIX: Use NASA training distribution current (~2A constant discharge)
+            # model_metadata scaler shows training current range was [1.975, 2.029]A
+            # Values outside this range produce LSTM inputs outside [0,1] → garbage predictions
+            sim_current = random.uniform(1.95, 2.05)
+            # FIX: Clamp voltage to training max (4.03V) to avoid out-of-distribution LSTM input
+            lstm_voltage = min(4.03, avg_voltage)
             state["history_buffer"].append(
-                [avg_voltage, random.uniform(15, 25), avg_temp, state["pack_soh"]]
+                [lstm_voltage, sim_current, avg_temp, state["pack_soh"]]
             )
             previous_soh = state["pack_soh"]
             predicted_soh = model_service.predict_soh(state["history_buffer"])
             if predicted_soh is not None:
-                state["pack_soh"] = (previous_soh * 0.72) + (predicted_soh * 0.28)
+                # Rate-limit LSTM influence: max 0.5% SoH change per step to prevent sudden crashes
+                blended = (previous_soh * 0.72) + (predicted_soh * 0.28)
+                max_step = 0.5
+                state["pack_soh"] = float(max(previous_soh - max_step, min(previous_soh + max_step, blended)))
 
             thermal_stress = max(0.0, avg_temp - config["base_temp"]) * 0.0025
             voltage_stress = abs(avg_voltage - config["base_voltage"]) * 0.08
@@ -190,7 +199,11 @@ class BatteryStateManager:
 
             # --- RUL Prediction & Dataset Integration ---
             history_frame = state.get("history_df", pd.DataFrame())
-            cycle_idx = len(history_frame)
+            # FIX: Use sim_cycle (starts at 0) instead of len(history_frame) (starts at 180)
+            # history_frame is pre-loaded with 180 historical rows → cycle_idx was always 180+
+            # causing row_idx to always pin to the last (most degraded) NASA row.
+            state["sim_cycle"] = state.get("sim_cycle", 0) + 1
+            cycle_idx = state["sim_cycle"]
             
             # Extract realistic features if available
             real_features = {}
@@ -245,7 +258,9 @@ class BatteryStateManager:
                 "dod_pct": real_features.get("dod_pct", float(config.get("typical_dod_pct", 80.0))),
                 "discharge_time_s": real_features.get("discharge_time_s", 3600),
                 "charge_time_s": real_features.get("charge_time_s", 7200),
-                "min_voltage_V": real_features.get("min_voltage_V", 3.0 * config["num_cells"]),
+                # FIX: fallback must be per-cell voltage (2.7V), NOT pack-level (3.0 * num_cells)
+                # XGBoost trained on single-cell NASA data; pack-level 144V is 53× out of range
+                "min_voltage_V": real_features.get("min_voltage_V", 2.7),
                 "ir_drop_proxy_V": real_features.get("ir_drop_proxy_V", 0.15),
                 "Re_ohm": real_features.get("Re_ohm", 0.015),
                 "Rct_ohm": real_features.get("Rct_ohm", 0.045),
@@ -277,12 +292,21 @@ class BatteryStateManager:
                 drivers.append("Normal Aging")
                 
             # Generate Safety-Aware Summary
-            safety_summary = "Operating Normally: No immediate safety concerns."
-            if state["pack_soh"] < 80 or (likely_rul is not None and likely_rul < 30):
-                safety_summary = "Replace Soon: Battery has reached critical degradation levels."
-            elif state["pack_soh"] < 90 or len([d for d in drivers if d != "Normal Aging"]) >= 2:
+            # FIX: SoH<80 is the primary trigger for "Replace Soon"
+            # RUL alone on a healthy battery (SoH>90%) must NOT trigger "Replace Soon" —
+            # that would show healthy Tesla at 98% SoH as needing replacement, which is wrong.
+            active_drivers = [d for d in drivers if d != "Normal Aging"]
+            if state["pack_soh"] < 80:
+                safety_summary = "Replace Soon: Battery health has reached critical degradation levels."
+            elif (
+                state["pack_soh"] < 90
+                or (likely_rul is not None and likely_rul < 50)
+                or len(active_drivers) >= 2
+            ):
                 safety_summary = "Monitor Closely: Significant degradation factors identified."
-                
+            else:
+                safety_summary = "Normal Operation: Battery parameters are within safe operating range."
+
             safety_summary += "\n\nDisclaimer: This is a predictive estimate based on historical patterns and should not be used as the sole operational guideline. Always consult manufacturer guidelines."
 
             # Enhance long term forecast with RUL
@@ -355,6 +379,7 @@ class BatteryStateManager:
             "fault_introduced": False,
             "faulty_cell_index": -1,
             "last_fault_check_time": time.time(),
+            "sim_cycle": 0,  # FIX: track real simulation cycles (not history_df length)
         }
         self._states[state_key] = state
         return state
