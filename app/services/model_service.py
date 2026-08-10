@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 
+import joblib
 import numpy as np
+import pandas as pd
 from tensorflow.keras.models import load_model
 
 from app.core.config import settings
@@ -25,6 +27,8 @@ class ModelService:
         self.feature_scale = None
         self.target_min = None
         self.target_scale = None
+        self.rul_model = None
+        self.rul_features = []
         self.reload()
 
     def reload(self) -> None:
@@ -36,6 +40,8 @@ class ModelService:
         self.feature_scale = None
         self.target_min = None
         self.target_scale = None
+        self.rul_model = None
+        self.rul_features = []
         metadata_loaded = False
 
         try:
@@ -43,6 +49,15 @@ class ModelService:
                 self.model = load_model(settings.model_path)
         except Exception:
             self.model = None
+
+        try:
+            if settings.rul_model_path.exists():
+                rul_data = joblib.load(settings.rul_model_path)
+                self.rul_model = rul_data.get("model")
+                self.rul_features = rul_data.get("features", [])
+        except Exception:
+            self.rul_model = None
+            self.rul_features = []
 
         try:
             if MODEL_METADATA_PATH.exists():
@@ -113,6 +128,23 @@ class ModelService:
         ):
             return float((predicted - self.target_min[0]) / self.target_scale[0])
         return float(predicted * 20 + 80)
+
+    def predict_rul(self, features: dict) -> float | None:
+        if self.rul_model is None or not self.rul_features:
+            return None
+        
+        # Build DataFrame with features in the exact order the model expects
+        feature_data = {}
+        for feature in self.rul_features:
+            feature_data[feature] = [features.get(feature, 0.0)]
+        
+        df = pd.DataFrame(feature_data)
+        try:
+            # Predict returns a numpy array, take the first element
+            predicted_rul = self.rul_model.predict(df)[0]
+            return float(max(0.0, predicted_rul))
+        except Exception:
+            return None
 
 
 model_service = ModelService()

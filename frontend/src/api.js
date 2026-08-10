@@ -6,8 +6,15 @@
         });
 
         if (!response.ok) {
-            const message = payload.detail || payload.message || "Request failed";
-            throw new Error(message);
+            // FastAPI validation errors return detail as an array of objects
+            let message = payload.detail || payload.message || "Request failed";
+            if (Array.isArray(message)) {
+                // Extract human-readable messages from FastAPI validation error array
+                message = message.map(function(e) {
+                    return e.msg || JSON.stringify(e);
+                }).join("; ");
+            }
+            throw new Error(String(message));
         }
 
         return payload;

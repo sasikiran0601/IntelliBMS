@@ -49,8 +49,19 @@ soh_history*.csv
 
 # Logs
 *.log
-#keys
-.pem
+
+# SSH Keys & Secrets — NEVER commit private keys
+*.pem
+*.key
+intelli_bms_key.pem
+
+# Datasets — large raw/processed data, NOT for git
+datasets.zip
+datasets/
+All_Datasets/
+convert_datasets.py
+zip_csv_files.py
+test_convert.py
 
 # Terraform
 .terraform/

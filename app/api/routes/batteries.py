@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import Request
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -84,34 +85,66 @@ def get_custom_live_data(battery_id: int, db: Session = Depends(get_db)) -> dict
 
 @router.post("/upload")
 async def upload_battery_files(
-    files: list[UploadFile] = File(...),
+    files: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ) -> dict:
+    # Ensure upload directory exists
+    settings.upload_dir.mkdir(parents=True, exist_ok=True)
+
     created_batteries: list[int] = []
+    skipped_files: list[str] = []
+
+    if not files:
+        raise HTTPException(
+            status_code=400,
+            detail="No files received. Please select at least one CSV, XLSX, JSON, or TXT file and try again.",
+        )
 
     for upload in files:
-        if not upload.filename or not allowed_file(upload.filename):
+        if not upload.filename:
+            skipped_files.append("(unnamed file)")
+            continue
+
+        if not allowed_file(upload.filename):
+            skipped_files.append(f"{upload.filename} (unsupported format)")
             continue
 
         safe_name = Path(upload.filename).name
         target_path = settings.upload_dir / safe_name
-        with target_path.open("wb") as handle:
-            handle.write(await upload.read())
 
-        battery_payload = parse_battery_file(Path(target_path), safe_name)
-        battery = Battery(**battery_payload, user_id=1)
-        db.add(battery)
-        db.commit()
-        db.refresh(battery)
-        created_batteries.append(battery.id)
-        target_path.unlink(missing_ok=True)
+        try:
+            contents = await upload.read()
+            if not contents:
+                skipped_files.append(f"{upload.filename} (empty file)")
+                continue
+
+            with target_path.open("wb") as handle:
+                handle.write(contents)
+
+            battery_payload = parse_battery_file(Path(target_path), safe_name)
+            battery = Battery(**battery_payload, user_id=1)
+            db.add(battery)
+            db.commit()
+            db.refresh(battery)
+            created_batteries.append(battery.id)
+        except Exception as exc:
+            skipped_files.append(f"{upload.filename} (error: {exc})")
+        finally:
+            target_path.unlink(missing_ok=True)
 
     if not created_batteries:
-        raise HTTPException(status_code=400, detail="No valid files were processed")
+        detail = "No valid files were processed."
+        if skipped_files:
+            detail += f" Rejected: {', '.join(skipped_files)}. Accepted formats: CSV, XLSX, JSON, TXT."
+        raise HTTPException(status_code=400, detail=detail)
 
-    return {
+    result: dict = {
         "success": True,
-        "message": f"Successfully created {len(created_batteries)} battery(s)",
+        "message": f"Successfully created {len(created_batteries)} battery profile(s).",
         "battery_ids": created_batteries,
         "battery_id": created_batteries[0],
     }
+    if skipped_files:
+        result["warnings"] = f"Some files were skipped: {', '.join(skipped_files)}"
+    return result
+
