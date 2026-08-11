@@ -43,6 +43,12 @@ data/
 
 # Model artifacts
 *.h5
+*.pkl
+
+# Hackathon submission large data files (models uploaded via SCP, datasets too large)
+HACKATHON_SUBMISSION/SOH_Dataset/*.mat
+HACKATHON_SUBMISSION/SOH_Dataset/*.csv
+HACKATHON_SUBMISSION/RUL_Dataset/*.csv
 
 # CSV history files
 soh_history*.csv

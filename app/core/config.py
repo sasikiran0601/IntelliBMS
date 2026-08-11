@@ -34,7 +34,12 @@ def get_settings() -> Settings:
     project_root = Path(__file__).resolve().parents[2]
     data_dir = project_root / "data"
     model_path = Path(os.getenv("MODEL_PATH", str(project_root / "soh_model.h5")))
-    rul_model_path = Path(os.getenv("RUL_MODEL_PATH", str(project_root / "All_Datasets" / "Converted_CSV_Datasets" / "engineered_features" / "rul_outputs" / "rul_xgboost_model.pkl")))
+    _rul_default = (
+        project_root / "rul_model.pkl"
+        if (project_root / "rul_model.pkl").exists()
+        else project_root / "All_Datasets" / "Converted_CSV_Datasets" / "engineered_features" / "rul_outputs" / "rul_xgboost_model.pkl"
+    )
+    rul_model_path = Path(os.getenv("RUL_MODEL_PATH", str(_rul_default)))
     metrics_path = Path(os.getenv("METRICS_PATH", str(project_root / "accuracy_metrics.json")))
 
     return Settings(
