@@ -55,15 +55,18 @@ def _generate_local_fallback(message: str) -> str:
     if soh < 80 or rul < 40:
         category = "Replace Soon"
         status_text = f"Battery health has dropped to {soh:.1f}% with an estimated RUL of {int(rul)} cycles."
+        action_text = f"Immediate action required. High risk of failure driven by: {drivers_str}."
     elif soh < 90 or "High Temperature" in drivers_str or "Internal Resistance" in drivers_str:
         category = "Monitor Closely"
-        status_text = f"Degradation factors ({drivers_str}) are actively impacting performance."
+        status_text = f"Degradation factors ({drivers_str}) are actively impacting performance. SOH is at {soh:.1f}% and RUL is {int(rul)} cycles."
+        action_text = "Schedule maintenance to investigate driving factors and prevent further rapid degradation."
     else:
         category = "Normal Operation"
-        status_text = "Battery parameters are currently within normal baseline parameters."
+        status_text = f"Battery parameters are currently within normal baseline parameters. SOH is {soh:.1f}%, RUL is {int(rul)} cycles."
+        action_text = f"Routine degradation detected ({drivers_str}). Continue standard monitoring."
 
     return (
-        f"{category}: {status_text} "
+        f"{category}: {status_text} {action_text} "
         f"Note that predicted Remaining Useful Life carries inherent statistical uncertainty based on cycle history. "
         f"Disclaimer: This is a predictive estimate based on historical patterns. Always consult manufacturer guidelines."
     )
@@ -86,39 +89,10 @@ async def chat(
     _: None = Depends(require_admin),
 ) -> ChatResponse:
     """
-    Generates AI narrative using Direct OpenAI API, falling back to n8n webhook,
+    Generates AI narrative using n8n webhook,
     and finally using local intelligent fallback to ensure 100% uptime.
     """
-    # 1. Direct OpenAI Mode (Fast & Direct)
-    if settings.openai_api_key:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {settings.openai_api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": "gpt-4o-mini",
-                        "messages": [
-                            {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user", "content": body.message},
-                        ],
-                        "max_tokens": 200,
-                        "temperature": 0.3,
-                    },
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    reply = data["choices"][0]["message"]["content"].strip()
-                    return ChatResponse(reply=reply)
-                else:
-                    print(f"[Assistant] OpenAI API returned HTTP {response.status_code}: {response.text}")
-        except Exception as e:
-            print(f"[Assistant] Direct OpenAI call failed: {e}")
-
-    # 2. Secondary Mode: n8n Webhook
+    # 1. Primary Mode: n8n Webhook
     if settings.n8n_webhook_url:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -140,10 +114,12 @@ async def chat(
                     )
                     if reply:
                         return ChatResponse(reply=str(reply))
+                else:
+                    print(f"[Assistant] n8n webhook returned HTTP {response.status_code}: {response.text}")
         except Exception as e:
             print(f"[Assistant] n8n webhook call failed: {e}")
 
-    # 3. Local Intelligent Fallback Engine (Guarantees zero downtime)
+    # 2. Local Intelligent Fallback Engine (Guarantees zero downtime)
     fallback_reply = _generate_local_fallback(body.message)
     return ChatResponse(reply=fallback_reply)
 

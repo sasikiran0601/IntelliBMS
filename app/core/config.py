@@ -27,7 +27,6 @@ class Settings:
     n8n_webhook_url: str | None
     n8n_api_key: str | None
     n8n_admin_token: str | None
-    openai_api_key: str | None
 
 
 def get_settings() -> Settings:
@@ -63,7 +62,6 @@ def get_settings() -> Settings:
         n8n_webhook_url=os.getenv("N8N_WEBHOOK_URL"),
         n8n_api_key=os.getenv("N8N_API_KEY"),
         n8n_admin_token=os.getenv("N8N_ADMIN_TOKEN", "default-secret-token"),
-        openai_api_key=os.getenv("OPENAI_API_KEY"),
     )
 
 

@@ -112,7 +112,7 @@ The assistant receives the current SOH, RUL, and degradation driver list and gen
 - Prohibits unsafe instructions (no bypassing BMS, no overriding limits)
 
 **Three-tier fallback chain:**
-1. OpenAI GPT-4o-mini (primary)
+1. n8n workflow (primary)
 2. n8n webhook (secondary)
 3. Local deterministic rule engine (tertiary — guarantees 100% uptime)
 
@@ -141,7 +141,7 @@ At every simulation step, the system evaluates current telemetry against physica
 
 4. **Production-grade deployment from open data:** The entire platform uses freely available NASA research datasets and open-source tooling, deployed on AWS with CI/CD, HTTPS, and infrastructure-as-code.
 
-5. **Graceful degradation architecture:** Three-tier fallback (OpenAI to n8n to local rule engine) ensures the assistant always responds, even during full external API outages.
+5. **Graceful degradation architecture:** Two-tier fallback (n8n to local rule engine) ensures the assistant always responds, even during full external API outages.
 
 #### Is it feasible?
 
@@ -268,8 +268,8 @@ RUL needs cycle-level aggregates across heterogeneous physical features (tempera
 **"How does the model generalize to new batteries?"**
 GroupShuffleSplit ensures the model trains on some batteries and tests on entirely different cells. B0006 was held out completely — the 5.52 pp MAE and 0.678 R-squared are measured on a battery the model never processed during training.
 
-**"What happens if OpenAI is down?"**
-The assistant has a three-tier fallback: OpenAI primary, n8n webhook secondary, local deterministic rule engine tertiary. The local engine applies explicit SOH/RUL thresholds to generate a correctly categorized safety narrative with zero external dependency.
+**"What happens if n8n is down?"**
+The assistant has a two-tier fallback: n8n webhook primary, local deterministic rule engine secondary. The local engine applies explicit SOH/RUL thresholds to generate a correctly categorized safety narrative with zero external dependency.
 
 **"How is this different from existing BMS?"**
 Existing BMS uses fixed voltage thresholds and cycle counters with no per-cell learning. IntelliBMS trains on real electrochemical degradation measurements, adapts to actual usage history, explains which mechanisms are active, and provides a forward-looking RUL projection — none of which rule-based systems can deliver.
