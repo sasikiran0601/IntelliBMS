@@ -243,29 +243,26 @@ class BatteryStateManager:
                 soh_slope_10cyc = (history_frame["soh"].iloc[-1] - history_frame["soh"].iloc[-10]) / 10.0
                 
             rul_features_dict = {
-                "soh_pct": state["pack_soh"],
-                "cycle_number": cycle_idx,
-                "soh_slope_5cyc": soh_slope_5cyc,
-                "soh_slope_10cyc": soh_slope_10cyc,
-                "soh_cumulative_drop": config["base_soh"] - state["pack_soh"],
-                "max_temp_discharge_C": real_features.get("max_temp_discharge_C", avg_temp + random.uniform(2, 5)),
-                "mean_temp_discharge_C": real_features.get("mean_temp_discharge_C", avg_temp),
-                "max_temp_charge_C": real_features.get("max_temp_charge_C", avg_temp + random.uniform(1, 3)),
-                "ambient_temperature_C": real_features.get("ambient_temperature_C", config["base_temp"]),
-                "mean_current_discharge_A": real_features.get("mean_current_discharge_A", float(config.get("max_discharge_rate", 50)) * 0.6),
-                "c_rate": real_features.get("c_rate", float(config.get("typical_c_rate", 0.5))),
-                "mean_current_charge_A": real_features.get("mean_current_charge_A", float(config.get("max_charge_rate", 50)) * 0.4),
-                "dod_pct": real_features.get("dod_pct", float(config.get("typical_dod_pct", 80.0))),
-                "discharge_time_s": real_features.get("discharge_time_s", 3600),
-                "charge_time_s": real_features.get("charge_time_s", 7200),
-                # FIX: fallback must be per-cell voltage (2.7V), NOT pack-level (3.0 * num_cells)
-                # XGBoost trained on single-cell NASA data; pack-level 144V is 53× out of range
-                "min_voltage_V": real_features.get("min_voltage_V", 2.7),
-                "ir_drop_proxy_V": real_features.get("ir_drop_proxy_V", 0.15),
+                "soh": state["pack_soh"],
+                "discharge_capacity_ah": 2.0 * (state["pack_soh"] / 100.0),
+                "discharge_time_s": real_features.get("discharge_time_s", 3600.0),
+                "mean_voltage": 3.5,
+                "min_voltage": real_features.get("min_voltage_V", 2.7),
+                "max_voltage": 4.2,
+                "voltage_drop": 1.5,
+                "mean_current": real_features.get("mean_current_discharge_A", 1.0),
+                "max_current": 2.0,
+                "c_rate": real_features.get("c_rate", 0.5),
+                "dod_pct": real_features.get("dod_pct", 80.0),
+                "mean_temp": real_features.get("mean_temp_discharge_C", avg_temp),
+                "max_temp": real_features.get("max_temp_discharge_C", avg_temp + random.uniform(2, 5)),
+                "temp_delta": 5.0,
+                "ambient_temp": real_features.get("ambient_temperature_C", config.get("base_temp", 25.0)),
+                "charge_time_s": real_features.get("charge_time_s", 3600.0),
                 "Re_ohm": real_features.get("Re_ohm", 0.015),
                 "Rct_ohm": real_features.get("Rct_ohm", 0.045),
                 "R_total_ohm": real_features.get("R_total_ohm", 0.060),
-                "Rct_slope_10cyc": real_features.get("Rct_slope_10cyc", 0.0001),
+                "cycle_number": cycle_idx,
             }
             predicted_rul = model_service.predict_rul(rul_features_dict)
             
@@ -280,16 +277,16 @@ class BatteryStateManager:
                 
             # Identify Degradation Drivers
             drivers = []
-            if rul_features_dict["max_temp_discharge_C"] > 35:
+            if rul_features_dict.get("max_temp", 25) > 35:
                 drivers.append("High Temperature Exposure")
-            if rul_features_dict["dod_pct"] > 85:
+            if rul_features_dict.get("dod_pct", 80) > 85:
                 drivers.append("Deep Discharge Cycles")
             # FIX: Use only c_rate (dimensionless, comparable across all battery sizes).
             # mean_current_discharge_A > 40 was unreliable: fallback = max_discharge * 0.6 = 60A
             # for Tesla 100Ah pack, which triggered "High C-Rate" even at normal 0.6C operation.
-            if rul_features_dict["c_rate"] > 1.0:
+            if rul_features_dict.get("c_rate", 0.5) > 1.0:
                 drivers.append("High C-Rate / Current Bursts")
-            if rul_features_dict["Re_ohm"] > 0.05:
+            if rul_features_dict.get("Re_ohm", 0.015) > 0.05:
                 drivers.append("Increased Internal Resistance")
             if not drivers:
                 drivers.append("Normal Aging")
@@ -378,7 +375,7 @@ class BatteryStateManager:
                 }
                 for index in range(config["num_cells"])
             ],
-            "pack_soh": config["base_soh"],
+            "pack_soh": float(history_frame.iloc[-1]["soh"]) if not history_frame.empty else config["base_soh"],
             "fault_introduced": False,
             "faulty_cell_index": -1,
             "last_fault_check_time": time.time(),
@@ -439,19 +436,26 @@ class BatteryStateManager:
         return {"text": forecast_text, "history": history, "projection": projection}
 
     def _record_history_point(self, state: dict[str, Any]) -> None:
-        now_timestamp = int(datetime.now().timestamp())
+        now_dt = datetime.now()
+        now_timestamp = int(now_dt.timestamp())
         history_frame = state["history_df"]
 
-        if not history_frame.empty and int(history_frame.iloc[-1]["timestamp"]) == now_timestamp:
-            history_frame.loc[history_frame.index[-1], "soh"] = state["pack_soh"]
+        if not history_frame.empty:
+            last_timestamp = int(history_frame.iloc[-1]["timestamp"])
+            last_dt = datetime.fromtimestamp(last_timestamp)
+            if last_dt.date() == now_dt.date():
+                history_frame.loc[history_frame.index[-1], "soh"] = state["pack_soh"]
+                history_frame.loc[history_frame.index[-1], "timestamp"] = now_timestamp
+            else:
+                history_frame = pd.concat(
+                    [
+                        history_frame,
+                        pd.DataFrame([{"timestamp": now_timestamp, "soh": state["pack_soh"]}]),
+                    ],
+                    ignore_index=True,
+                )
         else:
-            history_frame = pd.concat(
-                [
-                    history_frame,
-                    pd.DataFrame([{"timestamp": now_timestamp, "soh": state["pack_soh"]}]),
-                ],
-                ignore_index=True,
-            )
+            history_frame = pd.DataFrame([{"timestamp": now_timestamp, "soh": state["pack_soh"]}])
 
         history_frame = history_frame.sort_values("timestamp").tail(180).reset_index(drop=True)
         state["history_df"] = history_frame
@@ -468,6 +472,7 @@ class BatteryStateManager:
             + np.linspace(base_degradation, 0, 180)
             + np.random.normal(0, 0.5, 180)
         )
+        soh_history = np.clip(soh_history, 0, 100)
         pd.DataFrame(
             {"timestamp": sorted(timestamps), "soh": soh_history}
         ).to_csv(history_path, index=False)

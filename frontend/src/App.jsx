@@ -827,8 +827,8 @@ function MonitoringCharts({ liveData }) {
                     })}
                 </div>
 
-                <div style={{ position: "relative", background: "#fff", borderRadius: 14, overflow: "hidden" }}>
-                    <ResponsiveContainer width="100%" height={300}>
+                <div style={{ position: "relative", background: "#fff", borderRadius: 14, overflow: "hidden", outline: "none", border: "none" }}>
+                    <ResponsiveContainer width="100%" height={300} style={{ outline: "none", border: "none" }}>
                         <RechartsLineChart data={historyData} margin={{ top: 16, right: 18, left: 8, bottom: 0 }}>
                             {historyScale.showThresholdInChart ? (
                                 <RechartsReferenceArea y1={95} y2={historyDomain[1]} fill="rgba(134,239,172,0.15)" ifOverflow="extendDomain" />
@@ -980,8 +980,8 @@ function MonitoringCharts({ liveData }) {
                         : "The forecast shows the expected SOH trend over the next 24 months using the latest battery history."}
                 </div>
 
-                <div style={{ position: "relative", background: "#fff", borderRadius: 14, overflow: "hidden" }}>
-                    <ResponsiveContainer width="100%" height={320}>
+                <div style={{ position: "relative", background: "#fff", borderRadius: 14, overflow: "hidden", outline: "none", border: "none" }}>
+                    <ResponsiveContainer width="100%" height={320} style={{ outline: "none", border: "none" }}>
                         <RechartsLineChart data={forecastData} margin={{ top: 18, right: 32, left: 8, bottom: 0 }}>
                             {forecastScale.showThresholdInChart ? (
                                 <RechartsReferenceArea y1={80} y2={forecastDomain[1]} fill="rgba(134,239,172,0.13)" ifOverflow="extendDomain" />
@@ -1143,35 +1143,12 @@ function RulDashboard({ liveData }) {
     const [loadingAi, setLoadingAi] = useState(false);
     const [aiError, setAiError] = useState(null);
     const [cooldown, setCooldown] = useState(0);
-    const [usageCount, setUsageCount] = useState(0);
     const [carouselIdx, setCarouselIdx] = useState(0);
     const [driverIdx, setDriverIdx] = useState(0);
     const [safetyIdx, setSafetyIdx] = useState(0);
 
 
-    const RATE_LIMIT = 5;      // max calls per hour
     const COOLDOWN_SECS = 30;  // seconds between calls
-    const STORAGE_KEY = "intellibms_ai_usage";
-
-    // Load usage state from localStorage on mount
-    useEffect(function loadUsage() {
-        try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                const now = Date.now();
-                // Keep only calls within last hour
-                const recent = (parsed.calls || []).filter(function(ts) { return now - ts < 3600000; });
-                setUsageCount(recent.length);
-                // Restore cooldown if last call was recent
-                if (recent.length > 0) {
-                    const elapsed = Math.floor((now - recent[recent.length - 1]) / 1000);
-                    const remaining = COOLDOWN_SECS - elapsed;
-                    if (remaining > 0) setCooldown(remaining);
-                }
-            }
-        } catch(e) {}
-    }, []);
 
     // Cooldown countdown ticker
     useEffect(function tick() {
@@ -1183,21 +1160,6 @@ function RulDashboard({ liveData }) {
     function handleAiAnalysis() {
         if (loadingAi || cooldown > 0) return;
         if (!summary || !summary.battery_id || !summary.state_of_health) return;
-
-        // Rate limit check
-        try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            const parsed = raw ? JSON.parse(raw) : { calls: [] };
-            const now = Date.now();
-            const recent = (parsed.calls || []).filter(function(ts) { return now - ts < 3600000; });
-            if (recent.length >= RATE_LIMIT) {
-                setAiError("Rate limit reached: 5 AI analyses per hour. Please try again later.");
-                return;
-            }
-            recent.push(now);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ calls: recent }));
-            setUsageCount(recent.length);
-        } catch(e) {}
 
         setLoadingAi(true);
         setAiError(null);
@@ -1218,22 +1180,12 @@ function RulDashboard({ liveData }) {
         .finally(function() { setLoadingAi(false); });
     }
 
-    const canAnalyse = !loadingAi && cooldown === 0 && usageCount < RATE_LIMIT && !!summary.battery_id;
-    const usageLeft = Math.max(0, RATE_LIMIT - usageCount);
+    const canAnalyse = !loadingAi && cooldown === 0 && !!summary.battery_id;
 
     // Pre-compute carousel slides outside JSX (avoids IIFE-in-JSX Babel issues)
     const carouselSlides = (function() {
         if (!aiNarrative) return [];
-        const raw = aiNarrative
-            .replace(/([.!?])\s+/g, '$1||')
-            .split('||')
-            .map(function(s) { return s.trim(); })
-            .filter(function(s) { return s.length > 0; });
-        var out = [];
-        for (var i = 0; i < raw.length; i += 2) {
-            out.push(raw.slice(i, i + 2).join(' '));
-        }
-        return out;
+        return [aiNarrative];
     }());
     const carouselTotal = carouselSlides.length;
     const carouselCurrent = carouselTotal > 0 ? Math.min(carouselIdx, carouselTotal - 1) : 0;
@@ -1386,8 +1338,8 @@ function RulDashboard({ liveData }) {
                         Collecting RUL data… Live values will appear shortly.
                     </div>
                 ) : (
-                    <div style={{ height: 240 }}>
-                        <ResponsiveContainer height="100%" width="100%">
+                    <div style={{ height: 240, outline: "none", border: "none" }}>
+                        <ResponsiveContainer width="100%" height="100%" style={{ outline: "none", border: "none" }}>
                             <RechartsLineChart data={rulChartData} margin={{ top: 8, right: 16, left: 0, bottom: 16 }}>
                                 <RechartsCartesianGrid stroke="#f0f4f8" vertical={false} />
                                 <RechartsXAxis
@@ -1675,17 +1627,7 @@ function RulDashboard({ liveData }) {
                                             <strong style={{ fontSize: 15, color: "#0f172a", fontWeight: 700 }}>
                                                 AI Safety Analysis
                                             </strong>
-                                            <div style={{
-                                                fontSize: 11, fontWeight: 600,
-                                                color: "#64748b",
-                                                background: "#f1f5f9",
-                                                border: "1px solid #e2e8f0",
-                                                borderRadius: 20, padding: "3px 10px",
-                                            }}>
-                                                {usageLeft}/{RATE_LIMIT} left
-                                            </div>
                                         </div>
-
                                         {carouselTotal > 0 && (
                                             <div style={{ position: "relative" }}>
                                                 <div style={{ overflow: "hidden", borderRadius: 10 }}>
@@ -1751,8 +1693,6 @@ function RulDashboard({ liveData }) {
                                                 <><span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff", borderRadius: "50%", animation: "intelliSpin 0.7s linear infinite" }}></span>Analysing…</>
                                             ) : cooldown > 0 ? (
                                                 <>Cooldown {cooldown}s</>
-                                            ) : usageLeft === 0 ? (
-                                                <>Limit Reached</>
                                             ) : (
                                                 <>Generate AI Analysis</>
                                             )}
