@@ -181,11 +181,9 @@ class BatteryStateManager:
             )
             previous_soh = state["pack_soh"]
             predicted_soh = model_service.predict_soh(state["history_buffer"])
-            if predicted_soh is not None:
-                # Rate-limit LSTM influence: max 0.5% SoH change per step to prevent sudden crashes
-                blended = (previous_soh * 0.72) + (predicted_soh * 0.28)
-                max_step = 0.5
-                state["pack_soh"] = float(max(previous_soh - max_step, min(previous_soh + max_step, blended)))
+            # Removed LSTM blending here: 
+            # The static high voltage in the simulation causes the LSTM to continually predict ~100% SOH.
+            # Blending this prediction back into the simulation state was causing SOH to falsely grow to 100%.
 
             thermal_stress = max(0.0, avg_temp - config["base_temp"]) * 0.0025
             voltage_stress = abs(avg_voltage - config["base_voltage"]) * 0.08
